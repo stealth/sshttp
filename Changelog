@@ -1,0 +1,15 @@
+
+0.26
+----
+
++ Fri Aug 19 2011
++ Fixed logging inside chroot by adding LOG_NDELAY
++ Fixed potential connection slowdown by special usage patterns where a lot of clients
+  could slow down other users connections
+
+
+0.25
+---
+
++ Added multicore and HTTPS support
+

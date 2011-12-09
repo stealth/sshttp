@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# sshttp netfilter rules
+#
+
+DEV=eth0
+SSH_PORT=22
+HTTP_PORT=8080
+
+#if it clashes with complex NATing rules, try this
+#iptables -t mangle -F
+#iptables -t nat -F
+#iptables -t raw -F
+
+# block HTTP/SSH direct access
+iptables -A INPUT -i $DEV -p tcp --dport $SSH_PORT -j DROP
+iptables -A INPUT -i $DEV -p tcp --dport $HTTP_PORT -j DROP
+
+iptables -t mangle -N DIVERT || true
+iptables -t mangle -A OUTPUT -p tcp -o $DEV --sport $SSH_PORT -j DIVERT
+iptables -t mangle -A OUTPUT -p tcp -o $DEV --sport $HTTP_PORT -j DIVERT
+iptables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
+
+iptables -t mangle -A DIVERT -j MARK --set-mark 1
+iptables -t mangle -A DIVERT -j ACCEPT
+
+ip rule add fwmark 1 lookup 123 || true
+ip route add local 0.0.0.0/0 dev lo table 123
+
