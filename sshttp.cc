@@ -233,6 +233,8 @@ int sshttp::loop()
 					continue;
 				pfds[i].revents = 0;
 				if (dstaddr(i, &dst) < 0) {
+					err = "sshttp::loop::";
+					err += NS_Socket::why();
 					cleanup(i);
 					return -1;
 				}
@@ -240,12 +242,15 @@ int sshttp::loop()
 
 				// error?
 				if (dst.sin_port == 0) {
+					err = "sshttp::loop: dest port is 0?!";
 					cleanup(i);
 					continue;
 				}
 
 				peer_fd  = tcp_connect_nb(dst, sin, 1);
 				if (peer_fd < 0) {
+					err = "sshttp::loop::";
+					err += NS_Socket::why();
 					cleanup(i);
 					return -1;
 				}
@@ -277,6 +282,8 @@ int sshttp::loop()
 					max_fd = peer_fd;
 			} else if (fd2state[i]->state == STATE_CONNECTING) {
 				if (finish_connecting(i) < 0) {
+					err = "sshttp::loop::";
+					err += NS_Socket::why();
 					cleanup(fd2state[i]->peer_fd);
 					cleanup(i);
 					return -1;
