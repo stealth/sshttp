@@ -117,12 +117,12 @@ void sshttp::cleanup(int fd)
 	pfds[fd].revents = 0;
 	close(fd);
 
-
 	map<int, struct status *>::iterator i = fd2state.find(fd);
 	if (i != fd2state.end() && i->second) {
 		i->second->state = STATE_NONE;
 		i->second->fd = -1;
 		i->second->peer_fd = -1;
+		i->second->blen = 0;
 	}
 	if (max_fd == fd)
 		--max_fd;
