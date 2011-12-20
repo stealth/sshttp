@@ -129,6 +129,7 @@ int main(int argc, char **argv)
 
 	close_fds();
 
+	nice(-20);
 	openlog("sshttpd", LOG_NOWAIT|LOG_PID|LOG_NDELAY, LOG_DAEMON);
 
 	sshttp sh;

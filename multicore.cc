@@ -4,17 +4,14 @@
 
 #include "multicore.h"
 
-#ifdef linux
-
 #include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
 #include <cerrno>
 #include <string>
 #include <cstring>
-#include <sched.h>
-#include "config.h"
 
+#include "config.h"
 
 namespace NS_Misc {
 
@@ -22,6 +19,9 @@ using namespace std;
 
 int ncpus = 1;
 string err = "";
+
+#ifdef linux
+#include <sched.h>
 
 static int get_cores()
 {
@@ -113,7 +113,11 @@ int setup_multicore(int n)
 
 #else
 
-namespace NS_Misc {
+int init_multicore()
+{
+	return 0;
+}
+
 
 int setup_multicore(int n)
 {

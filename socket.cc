@@ -131,10 +131,12 @@ int bind_local(int sock, const struct sockaddr_in &sin, bool do_listen)
 	}
 
 	if (do_listen) {
-		if (listen(sock, SOMAXCONN) < 0) {
-			error = "NS_Socket::bind_local::listen:";
-			error += strerror(errno);
-			return -1;
+		if (listen(sock, 10000) < 0) {
+			if (listen(sock, SOMAXCONN) < 0) {
+				error = "NS_Socket::bind_local::listen:";
+				error += strerror(errno);
+				return -1;
+			}
 		}
 	}
 	return 0;
@@ -152,29 +154,43 @@ int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from,
 
 	int f;
 	if ((f = fcntl(sock, F_GETFL, 0)) < 0) {
+		close(sock);
 		error = "NS_Socket::tcp_connect_nb::fcntl:";
 		error += strerror(errno);
 		return -1;
 	}
 	if (fcntl(sock, F_SETFL, f|O_NONBLOCK) < 0) {
+		close(sock);
 		error = "NS_Socket::tcp_connect_nb::fcntl:";
 		error += strerror(errno);
 		return -1;
 	}
 
+#ifdef IP_TRANSPARENT
+#define TRANSPARENT_TRIX IP_TRANSPARENT
+#elif defined IP_FREEBIND
+#define TRANSPARENT_TRIX IP_FREEBIND
+#else
+#define TRANSPARENT_TRIX IP_BINDANY
+#endif
+
 	if (from.sin_port != 0) {
 		int one = 1;
-		if (transparent && setsockopt(sock, SOL_IP, IP_TRANSPARENT, &one, sizeof(one)) < 0) {
+		if (transparent && setsockopt(sock, SOL_IP, TRANSPARENT_TRIX, &one, sizeof(one)) < 0) {
+			close(sock);
 			error = "NS_Socket::tcp_connect_nb::setsockopt:";
 			error += strerror(errno);
 			return -1;
 		}
-		if (bind_local(sock, from, 0) < 0)
+		if (bind_local(sock, from, 0) < 0) {
+			close(sock);
 			return -1;
+		}
 	}
 
 	if (connect(sock, (struct sockaddr *)&to, sizeof(to)) < 0 &&
 	    errno != EINPROGRESS) {
+		close(sock);
 		error = "NS_Socket::tcp_connect_nb::fcntl:";
 		error += strerror(errno);
 		return -1;

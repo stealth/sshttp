@@ -117,9 +117,12 @@ void sshttp::cleanup(int fd)
 	pfds[fd].revents = 0;
 	close(fd);
 
-	if (fd2state.find(fd) != fd2state.end() && fd2state[fd]) {
-		delete fd2state[fd];
-		fd2state[fd] = NULL;
+
+	map<int, struct status *>::iterator i = fd2state.find(fd);
+	if (i != fd2state.end() && i->second) {
+		i->second->state = STATE_NONE;
+		i->second->fd = -1;
+		i->second->peer_fd = -1;
 	}
 	if (max_fd == fd)
 		--max_fd;
@@ -139,7 +142,7 @@ void sshttp::calc_max_fd()
 
 int sshttp::loop()
 {
-	int i = 0, n = 0, wn = 0, f = 0;
+	int i = 0, n = 0, wn = 0, afd = -1, peer_fd = -1;
 	time_t now = 0;
 	sockaddr_in sin, dst;
 	socklen_t slen = sizeof(sin);
@@ -147,15 +150,18 @@ int sshttp::loop()
 	for (;;) {
 		// Need to have a quite small timeout, since STATE_DECIDING may change without
 		// data arrival, e.g. without a poll() trigger.
-		poll(pfds, max_fd + 1, 1000);
+		if (poll(pfds, max_fd + 1, 1000) < 0)
+			continue;
+
 		now = time(NULL);
 
 		// assert: pfds[i].fd == i
 		for (i = first_fd; i <= max_fd; ++i) {
-			if (fd2state.find(i) == fd2state.end() || !fd2state[i]) {
-				cleanup(i);
+			if (pfds[i].fd == -1)
 				continue;
-			}
+
+			if (fd2state.find(i) == fd2state.end() || !fd2state[i])
+				continue;
 
 			// timeout hanging connections (with pending data) but not accepting socket
 			if (now - fd2state[i]->last_t >= 20 &&
@@ -166,49 +172,59 @@ int sshttp::loop()
 				continue;
 			}
 
+			if ((pfds[i].revents & (POLLERR|POLLHUP|POLLNVAL)) != 0) {
+				cleanup(fd2state[i]->peer_fd);
+				cleanup(i);
+				continue;
+			}
+
 			if (pfds[i].revents == 0 && fd2state[i]->state != STATE_DECIDING)
 				continue;
-
 
 			// new connection ready to accept?
 			if (fd2state[i]->state == STATE_ACCEPTING) {
 				pfds[i].revents = 0;
-				//pfds[i].events = POLLIN|POLLOUT;
-				int afd = accept(i, (struct sockaddr *)&sin, &slen);
-				if (afd < 0)
-					continue;
-				nodelay(afd);
-				pfds[afd].fd = afd;
-				pfds[afd].events = POLLIN;
-				pfds[afd].revents = 0;
+				for (;;) {
+#ifdef linux
+					afd = accept4(i, (struct sockaddr *)&sin, &slen, SOCK_NONBLOCK);
+#else
+					afd = accept(i, (struct sockaddr *)&sin, &slen);
+#endif
+					if (afd < 0)
+						break;
+					nodelay(afd);
+					pfds[afd].fd = afd;
+					pfds[afd].events = POLLIN;
+					pfds[afd].revents = 0;
 
-				if ((f = fcntl(afd, F_GETFL, 0)) < 0) {
-					cleanup(afd);
-					err = "sshttp::loop::fcntl:";
-					err += strerror(errno);
-					return -1;
+#ifndef linux
+					if (fcntl(afd, F_SETFL, O_RDWR|O_NONBLOCK) < 0) {
+						cleanup(afd);
+						err = "sshttp::loop::fcntl:";
+						err += strerror(errno);
+						return -1;
+					}
+#endif
+
+					if (!fd2state[afd]) {
+						fd2state[afd] = new (nothrow) status;
+
+						if (!fd2state[afd]) {
+							err = "OOM";
+							close(afd);
+							return -1;
+						}
+					}
+
+					// We dont know yet which protocol is coming
+					fd2state[afd]->peer_fd = -1;
+					fd2state[afd]->state = STATE_DECIDING;
+
+					if (afd > max_fd)
+						max_fd = afd;
+					fd2state[afd]->last_t = now;
 				}
-				if (fcntl(afd, F_SETFL, f|O_NONBLOCK) < 0) {
-					cleanup(afd);
-					err = "sshttp::loop::fcntl:";
-					err += strerror(errno);
-					return -1;
-				}
-
-				fd2state[afd] = new (nothrow) status;
-				if (!fd2state[afd]) {
-					err = "OOM";
-					close(afd);
-					return -1;
-				}
-
-				// We dont know yet which protocol is coming
-				fd2state[afd]->peer_fd = -1;
-				fd2state[afd]->state = STATE_DECIDING;
-
-				if (afd > max_fd)
-					max_fd = afd;
-				fd2state[afd]->last_t = now;
+				continue;
 
 			// First input data from a client. Now we need to decide where we go.
 			} else if (fd2state[i]->state == STATE_DECIDING) {
@@ -228,7 +244,7 @@ int sshttp::loop()
 					continue;
 				}
 
-				int peer_fd  = tcp_connect_nb(dst, sin, 1);
+				peer_fd  = tcp_connect_nb(dst, sin, 1);
 				if (peer_fd < 0) {
 					cleanup(i);
 					return -1;
@@ -237,13 +253,16 @@ int sshttp::loop()
 				fd2state[i]->state = STATE_CONNECTED;
 				fd2state[i]->last_t = now;
 
-				fd2state[peer_fd] = new (nothrow) status;
 				if (!fd2state[peer_fd]) {
-					err = "OOM";
-					cleanup(i);
-					close(peer_fd);
-					return -1;
+					fd2state[peer_fd] = new (nothrow) status;
+					if (!fd2state[peer_fd]) {
+						err = "OOM";
+						cleanup(i);
+						close(peer_fd);
+						return -1;
+					}
 				}
+
 				fd2state[peer_fd]->peer_fd = i;
 				fd2state[peer_fd]->state = STATE_CONNECTING;
 				fd2state[peer_fd]->last_t = now;
@@ -273,13 +292,6 @@ int sshttp::loop()
 				    !fd2state[fd2state[i]->peer_fd] ||
 				    fd2state[fd2state[i]->peer_fd]->state == STATE_CONNECTING) {
 					pfds[i].revents = 0;
-					continue;
-				}
-
-				if (pfds[i].revents == POLLHUP ||
-				    pfds[i].revents == POLLERR) {
-					cleanup(fd2state[i]->peer_fd);
-					cleanup(i);
 					continue;
 				}
 
