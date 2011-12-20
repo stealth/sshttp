@@ -1,0 +1,12 @@
+
+Some things that you can tune to have optimum performance
+in general:
+
+- Increase value inside /proc/sys/net/core/somaxconn to have larger
+  connection backlog queue (10000)
+- If somaxconn is increased, you usually dont need to bind to more
+  than one CPU, e.g. you can invoke the program with "-n 1"
+- have the logfile's on a different HDD than the webroot
+- If firewall policy allows, mark HTTP traffic as not-conntracked:
+  iptables -t raw -A PREROUTING -p tcp --dport 80 -j NOTRACK
+
