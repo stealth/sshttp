@@ -152,14 +152,7 @@ int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from,
 		return -1;
 	}
 
-	int f;
-	if ((f = fcntl(sock, F_GETFL, 0)) < 0) {
-		error = "NS_Socket::tcp_connect_nb::fcntl:";
-		error += strerror(errno);
-		close(sock);
-		return -1;
-	}
-	if (fcntl(sock, F_SETFL, f|O_NONBLOCK) < 0) {
+	if (fcntl(sock, F_SETFL, O_RDWR|O_NONBLOCK) < 0) {
 		error = "NS_Socket::tcp_connect_nb::fcntl:";
 		error += strerror(errno);
 		close(sock);

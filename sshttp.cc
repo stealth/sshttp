@@ -185,7 +185,7 @@ int sshttp::loop()
 			if (fd2state[i]->state == STATE_ACCEPTING) {
 				pfds[i].revents = 0;
 				for (;;) {
-#ifdef linux
+#ifdef LINUX26
 					afd = accept4(i, (struct sockaddr *)&sin, &slen, SOCK_NONBLOCK);
 #else
 					afd = accept(i, (struct sockaddr *)&sin, &slen);
@@ -197,7 +197,7 @@ int sshttp::loop()
 					pfds[afd].events = POLLIN;
 					pfds[afd].revents = 0;
 
-#ifndef linux
+#ifndef LINUX26
 					if (fcntl(afd, F_SETFL, O_RDWR|O_NONBLOCK) < 0) {
 						cleanup(afd);
 						err = "sshttp::loop::fcntl:";
