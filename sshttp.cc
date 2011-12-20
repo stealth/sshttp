@@ -219,6 +219,7 @@ int sshttp::loop()
 					// We dont know yet which protocol is coming
 					fd2state[afd]->peer_fd = -1;
 					fd2state[afd]->state = STATE_DECIDING;
+					fd2state[afd]->from = sin;
 
 					if (afd > max_fd)
 						max_fd = afd;
@@ -242,12 +243,12 @@ int sshttp::loop()
 
 				// error?
 				if (dst.sin_port == 0) {
-					err = "sshttp::loop: dest port is 0?!";
+					err = "sshttp::loop: dst port is 0?!";
 					cleanup(i);
 					continue;
 				}
 
-				peer_fd  = tcp_connect_nb(dst, sin, 1);
+				peer_fd  = tcp_connect_nb(dst, fd2state[i]->from, 1);
 				if (peer_fd < 0) {
 					err = "sshttp::loop::";
 					err += NS_Socket::why();

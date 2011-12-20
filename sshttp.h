@@ -91,7 +91,7 @@ struct status {
 	time_t last_t;
 	char buf[1024];
 	uint16_t blen;
-
+	struct sockaddr_in from;
 	status() { memset(buf, 0, sizeof(buf)); blen = 0; };
 };
 

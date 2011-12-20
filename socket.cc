@@ -154,15 +154,15 @@ int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from,
 
 	int f;
 	if ((f = fcntl(sock, F_GETFL, 0)) < 0) {
-		close(sock);
 		error = "NS_Socket::tcp_connect_nb::fcntl:";
 		error += strerror(errno);
+		close(sock);
 		return -1;
 	}
 	if (fcntl(sock, F_SETFL, f|O_NONBLOCK) < 0) {
-		close(sock);
 		error = "NS_Socket::tcp_connect_nb::fcntl:";
 		error += strerror(errno);
+		close(sock);
 		return -1;
 	}
 
@@ -173,9 +173,9 @@ int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from,
 #else
 		if (transparent && setsockopt(sock, IPPROTO_IP, IP_BINDANY, &one, sizeof(one)) < 0) {
 #endif
-			close(sock);
 			error = "NS_Socket::tcp_connect_nb::setsockopt:";
 			error += strerror(errno);
+			close(sock);
 			return -1;
 		}
 		if (bind_local(sock, from, 0) < 0) {
@@ -187,7 +187,7 @@ int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from,
 	if (connect(sock, (struct sockaddr *)&to, sizeof(to)) < 0 &&
 	    errno != EINPROGRESS) {
 		close(sock);
-		error = "NS_Socket::tcp_connect_nb::fcntl:";
+		error = "NS_Socket::tcp_connect_nb::connect:";
 		error += strerror(errno);
 		return -1;
 	}
