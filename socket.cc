@@ -166,17 +166,13 @@ int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from,
 		return -1;
 	}
 
-#ifdef IP_TRANSPARENT
-#define TRANSPARENT_TRIX IP_TRANSPARENT
-#elif defined IP_FREEBIND
-#define TRANSPARENT_TRIX IP_FREEBIND
-#else
-#define TRANSPARENT_TRIX IP_BINDANY
-#endif
-
 	if (from.sin_port != 0) {
 		int one = 1;
-		if (transparent && setsockopt(sock, SOL_IP, TRANSPARENT_TRIX, &one, sizeof(one)) < 0) {
+#ifdef LINUX26
+		if (transparent && setsockopt(sock, SOL_IP, IP_TRANSPARENT, &one, sizeof(one)) < 0) {
+#else
+		if (transparent && setsockopt(sock, IPPROTO_IP, IP_BINDANY, &one, sizeof(one)) < 0) {
+#endif
 			close(sock);
 			error = "NS_Socket::tcp_connect_nb::setsockopt:";
 			error += strerror(errno);

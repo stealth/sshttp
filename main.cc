@@ -134,7 +134,7 @@ int main(int argc, char **argv)
 
 	sshttp sh;
 	if (sh.init(Config::local_port) < 0) {
-		fprintf(stderr, "%s", sh.why());
+		fprintf(stderr, "%s\n", sh.why());
 		exit(errno);
 	}
 
@@ -142,17 +142,17 @@ int main(int argc, char **argv)
 	NS_Misc::setup_multicore(Config::cores);
 
 #ifdef USE_CAPS
-
 	struct passwd *pw = getpwnam(Config::user.c_str());
 	if (!pw)
 		die("unknown user:getpwnam");
 
 	if (prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) < 0)
 		die("prctl");
-
+#endif
 	if (chroot(Config::root.c_str()) < 0)
 		die("chroot");
 
+#ifdef USE_CAPS
 	if (setgid(pw->pw_gid) < 0)
 		die("setgid");
 	if (initgroups(Config::user.c_str(), pw->pw_gid) < 0)

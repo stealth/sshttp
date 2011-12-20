@@ -1,10 +1,22 @@
 # sshttp Makefile
 
-CXX=c++
 CFLAGS=-c -O2 -Wall
+
+# On BSD systems you either use gmake or you delete
+# the ifeq's and the Linux def part.
+#
+
+ifeq ($(shell uname -o), GNU/Linux)
 CFLAGS+=-DUSE_CAPS
-LD=ld
+CFLAGS+=-DLINUX26
 LIBS=-lcap
+else
+CFLAGS+=-DFREEBSD
+LIBS=
+endif
+
+CXX=c++
+LD=ld
 
 all: socket.o main.o sshttp.o multicore.o
 	$(CXX) *.o $(LIBS) -o sshttpd
@@ -23,5 +35,5 @@ main.o: main.cc
 	$(CXX) $(CFLAGS) -ansi -pedantic main.cc
 
 socket.o: socket.cc socket.h
-	$(CXX) -DLINUX26 $(CFLAGS) -ansi -pedantic socket.cc
+	$(CXX) $(CFLAGS) -ansi -pedantic socket.cc
 
