@@ -129,6 +129,28 @@ void sshttp::cleanup(int fd)
 }
 
 
+// After a connection has gone through this shtdown(), it still needs to
+// be cleanup()'ed (where handle is actually closed)
+void sshttp::shutdown(int fd)
+{
+	if (fd < 0)
+		return;
+	if (fd2state.count(fd) == 0 || !fd2state[fd])
+		return;
+
+	::shutdown(fd, SHUT_RDWR);
+	pfds[fd].events = POLLIN;
+	pfds[fd].revents = 0;
+	fd2state[fd]->state = STATE_CLOSING;
+	fd2state[fd]->last_t = now;
+
+	// It is important to destroy references to peer (same as for cleanup())
+	// to avoid pitfalls with re-used fd's for newly accepted connections
+	fd2state[fd]->peer_fd = -1;
+	fd2state[fd]->blen = 0;
+}
+
+
 void sshttp::calc_max_fd()
 {
 	for (int i = max_fd; i >= first_fd; --i) {
@@ -143,7 +165,6 @@ void sshttp::calc_max_fd()
 int sshttp::loop()
 {
 	int i = 0, n = 0, wn = 0, afd = -1, peer_fd = -1;
-	time_t now = 0;
 	sockaddr_in sin, dst;
 	socklen_t slen = sizeof(sin);
 
@@ -160,20 +181,42 @@ int sshttp::loop()
 			if (pfds[i].fd == -1)
 				continue;
 
-			if (fd2state.find(i) == fd2state.end() || !fd2state[i])
+			if (fd2state.count(i) == 0 || !fd2state[i])
 				continue;
 
-			// timeout hanging connections (with pending data) but not accepting socket
-			if (now - fd2state[i]->last_t >= 20 &&
-			    fd2state[i]->state != STATE_ACCEPTING &&
-			    fd2state[i]->blen > 0) {
-				cleanup(fd2state[i]->peer_fd);
+			// shutdown() and cleanup() [also cleanup() and cleanup()] are always
+			// done in pairs (connection and its peer). So if there appears a STATE_CLOSING
+			// it can be handled alone without its peer
+			if (fd2state[i]->state == STATE_CLOSING &&
+			    now - fd2state[i]->last_t >= TIMEOUT_CLOSING) {
 				cleanup(i);
 				continue;
 			}
 
+			// timeout hanging connections (with pending data) but not accepting socket
+			if (now - fd2state[i]->last_t >=  TIMEOUT_HANGING &&
+			    fd2state[i]->state != STATE_ACCEPTING &&
+			    fd2state[i]->blen > 0) {
+				if (pfds[i].revents == 0) {
+					cleanup(fd2state[i]->peer_fd);
+					cleanup(i);
+					continue;
+				}
+			}
+
 			if ((pfds[i].revents & (POLLERR|POLLHUP|POLLNVAL)) != 0) {
-				cleanup(fd2state[i]->peer_fd);
+
+				// flush buffer to peer if there is pending data
+				if (fd2state[i]->blen > 0 && fd2state[i]->state == STATE_CONNECTED) {
+					writen(fd2state[i]->peer_fd, fd2state[i]->buf, fd2state[i]->blen);
+					fd2state[i]->blen = 0;
+				}
+
+				// hangup/error for i, but let kernel flush internal send buffers
+				// for peer. If already in CLOSING state, no need to shutdown peer again
+				// which is already destroyed
+				if (fd2state[i]->state != STATE_CLOSING)
+					shutdown(fd2state[i]->peer_fd);
 				cleanup(i);
 				continue;
 			}
@@ -206,7 +249,7 @@ int sshttp::loop()
 					}
 #endif
 
-					if (!fd2state[afd]) {
+					if (fd2state.count(afd) == 0) {
 						fd2state[afd] = new (nothrow) status;
 
 						if (!fd2state[afd]) {
@@ -217,20 +260,21 @@ int sshttp::loop()
 					}
 
 					// We dont know yet which protocol is coming
+					fd2state[afd]->fd = afd;
 					fd2state[afd]->peer_fd = -1;
 					fd2state[afd]->state = STATE_DECIDING;
 					fd2state[afd]->from = sin;
+					fd2state[afd]->last_t = now;
 
 					if (afd > max_fd)
 						max_fd = afd;
-					fd2state[afd]->last_t = now;
 				}
 				continue;
 
 			// First input data from a client. Now we need to decide where we go.
 			} else if (fd2state[i]->state == STATE_DECIDING) {
 				// allow up to two seconds for clients to send first proto stuff
-				if (pfds[i].revents == 0 && now - fd2state[i]->last_t < 2)
+				if (pfds[i].revents == 0 && now - fd2state[i]->last_t < TIMEOUT_PROTOCOL)
 					continue;
 				pfds[i].revents = 0;
 				if (dstaddr(i, &dst) < 0) {
@@ -243,7 +287,7 @@ int sshttp::loop()
 
 				// error?
 				if (dst.sin_port == 0) {
-					err = "sshttp::loop: dst port is 0?!";
+					err = "sshttp::loop: Error while detecting protocol.";
 					cleanup(i);
 					continue;
 				}
@@ -259,7 +303,7 @@ int sshttp::loop()
 				fd2state[i]->state = STATE_CONNECTED;
 				fd2state[i]->last_t = now;
 
-				if (!fd2state[peer_fd]) {
+				if (fd2state.count(peer_fd) == 0) {
 					fd2state[peer_fd] = new (nothrow) status;
 					if (!fd2state[peer_fd]) {
 						err = "OOM";
@@ -269,6 +313,7 @@ int sshttp::loop()
 					}
 				}
 
+				fd2state[peer_fd]->fd = peer_fd;
 				fd2state[peer_fd]->peer_fd = i;
 				fd2state[peer_fd]->state = STATE_CONNECTING;
 				fd2state[peer_fd]->last_t = now;
@@ -296,7 +341,7 @@ int sshttp::loop()
 				pfds[i].revents = 0;
 			} else if (fd2state[i]->state == STATE_CONNECTED) {
 				// peer not ready yet
-				if (fd2state.find(fd2state[i]->peer_fd) == fd2state.end() ||
+				if (fd2state.count(fd2state[i]->peer_fd) == 0 ||
 				    !fd2state[fd2state[i]->peer_fd] ||
 				    fd2state[fd2state[i]->peer_fd]->state == STATE_CONNECTING) {
 					pfds[i].revents = 0;
@@ -307,8 +352,11 @@ int sshttp::loop()
 					// actually data to send?
 					if ((n = fd2state[fd2state[i]->peer_fd]->blen) > 0) {
 						wn = writen(i, fd2state[fd2state[i]->peer_fd]->buf, n);
+
+						// error for i, but let kernel flush internal sendbuffer
+						// for peer
 						if (wn <= 0) {
-							cleanup(fd2state[i]->peer_fd);
+							shutdown(fd2state[i]->peer_fd);
 							cleanup(i);
 							continue;
 						}
@@ -334,8 +382,11 @@ int sshttp::loop()
 						continue;
 					}
 					n = read(i, fd2state[i]->buf, sizeof(fd2state[i]->buf));
+
+					// No need to writen() pending data on read error here, as above blen check
+					// ensured no pending data can happen here
 					if (n <= 0) {
-						cleanup(fd2state[i]->peer_fd);
+						shutdown(fd2state[i]->peer_fd);
 						cleanup(i);
 						continue;
 					}
@@ -345,7 +396,7 @@ int sshttp::loop()
 					pfds[i].events = POLLIN;
 				}
 
-				pfds[i].revents= 0;
+				pfds[i].revents = 0;
 				fd2state[i]->last_t = now;
 				fd2state[fd2state[i]->peer_fd]->last_t = now;
 			}

@@ -41,6 +41,7 @@
 #include <cstring>
 #include <map>
 #include <time.h>
+#include <sys/time.h>
 #include <stdint.h>
 
 
@@ -50,24 +51,34 @@ private:
 	int first_fd, max_fd;
 	uint16_t d_ssh_port, d_http_port;
 
+	time_t now;
+
 	std::string err;
 
 	std::map<int, struct status *> fd2state;
 
 	void cleanup(int);
 
+	void shutdown(int);
+
 	void calc_max_fd();
 
 	uint16_t find_port(int);
 
 public:
-	sshttp() : d_ssh_port(22), d_http_port(8080) {};
+	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), now(0), err("") {}
 
 	~sshttp() {};
 
-	void ssh_port(uint16_t p) { d_ssh_port = p; };
+	void ssh_port(uint16_t p)
+	{
+		d_ssh_port = p;
+	}
 
-	void http_port(uint16_t p) { d_http_port = p; };
+	void http_port(uint16_t p)
+	{
+		d_http_port = p;
+	}
 
 	int init(uint16_t);
 
@@ -76,13 +87,22 @@ public:
 	const char *why();
 };
 
+
 typedef enum {
 	STATE_CONNECTING = 0,
 	STATE_ACCEPTING,
 	STATE_DECIDING,
 	STATE_CONNECTED,
+	STATE_CLOSING,
 	STATE_NONE
 } status_t;
+
+
+enum {
+	TIMEOUT_PROTOCOL = 2,
+	TIMEOUT_CLOSING = 5,
+	TIMEOUT_HANGING  = 20
+};
 
 
 struct status {
@@ -92,7 +112,12 @@ struct status {
 	char buf[1024];
 	uint16_t blen;
 	struct sockaddr_in from;
-	status() { memset(buf, 0, sizeof(buf)); blen = 0; };
+
+	status()
+	 : fd(-1), peer_fd(-1), state(STATE_NONE)
+	{
+		memset(buf, 0, sizeof(buf)); blen = 0;
+	}
 };
 
 
