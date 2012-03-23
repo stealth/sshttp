@@ -197,11 +197,9 @@ int sshttp::loop()
 			if (now - fd2state[i]->last_t >=  TIMEOUT_HANGING &&
 			    fd2state[i]->state != STATE_ACCEPTING &&
 			    fd2state[i]->blen > 0) {
-				if (pfds[i].revents == 0) {
-					cleanup(fd2state[i]->peer_fd);
-					cleanup(i);
-					continue;
-				}
+				cleanup(fd2state[i]->peer_fd);
+				cleanup(i);
+				continue;
 			}
 
 			if ((pfds[i].revents & (POLLERR|POLLHUP|POLLNVAL)) != 0) {
