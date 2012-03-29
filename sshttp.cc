@@ -113,8 +113,7 @@ void sshttp::cleanup(int fd)
 		return;
 
 	pfds[fd].fd = -1;
-	pfds[fd].events = 0;
-	pfds[fd].revents = 0;
+	pfds[fd].events = pfds[fd].revents = 0;
 	close(fd);
 
 	map<int, struct status *>::iterator i = fd2state.find(fd);
@@ -126,6 +125,10 @@ void sshttp::cleanup(int fd)
 	}
 	if (max_fd == fd)
 		--max_fd;
+
+	map<int, time_t>::iterator it = shutdown_fds.find(fd);
+	if (it != shutdown_fds.end())
+		shutdown_fds.erase(it);
 }
 
 
@@ -138,16 +141,20 @@ void sshttp::shutdown(int fd)
 	if (fd2state.count(fd) == 0 || !fd2state[fd])
 		return;
 
-	::shutdown(fd, SHUT_RDWR);
-	pfds[fd].events = POLLIN;
-	pfds[fd].revents = 0;
-	fd2state[fd]->state = STATE_CLOSING;
-	fd2state[fd]->last_t = now;
+	if (fd2state[fd]->state == STATE_CLOSING || fd2state[fd]->state == STATE_NONE)
+		return;
 
-	// It is important to destroy references to peer (same as for cleanup())
-	// to avoid pitfalls with re-used fd's for newly accepted connections
-	fd2state[fd]->peer_fd = -1;
+	::shutdown(fd, SHUT_RDWR);
+	shutdown_fds[fd] = now;
+
+	fd2state[fd]->state = STATE_CLOSING;
 	fd2state[fd]->blen = 0;
+
+	pfds[fd].fd = -1;
+	pfds[fd].events = pfds[fd].revents = 0;
+
+	if (max_fd == fd)
+		--max_fd;
 }
 
 
@@ -184,19 +191,12 @@ int sshttp::loop()
 			if (fd2state.count(i) == 0 || !fd2state[i])
 				continue;
 
-			// shutdown() and cleanup() [also cleanup() and cleanup()] are always
-			// done in pairs (connection and its peer). So if there appears a STATE_CLOSING
-			// it can be handled alone without its peer
-			if (fd2state[i]->state == STATE_CLOSING &&
-			    now - fd2state[i]->last_t >= TIMEOUT_CLOSING) {
-				cleanup(i);
-				continue;
-			}
-
 			// timeout hanging connections (with pending data) but not accepting socket
-			if (now - fd2state[i]->last_t >=  TIMEOUT_HANGING &&
+			if (now - fd2state[i]->last_t >=  TIMEOUT_ALIVE &&
 			    fd2state[i]->state != STATE_ACCEPTING &&
 			    fd2state[i]->blen > 0) {
+				// always cleanup()/shutdown() in pairs! Otherwise re-used fd numbers
+				// make problems
 				cleanup(fd2state[i]->peer_fd);
 				cleanup(i);
 				continue;
@@ -211,10 +211,8 @@ int sshttp::loop()
 				}
 
 				// hangup/error for i, but let kernel flush internal send buffers
-				// for peer. If already in CLOSING state, no need to shutdown peer again
-				// which is already destroyed
-				if (fd2state[i]->state != STATE_CLOSING)
-					shutdown(fd2state[i]->peer_fd);
+				// for peer.
+				shutdown(fd2state[i]->peer_fd);
 				cleanup(i);
 				continue;
 			}
@@ -226,13 +224,17 @@ int sshttp::loop()
 			if (fd2state[i]->state == STATE_ACCEPTING) {
 				pfds[i].revents = 0;
 				for (;;) {
+					heavy_load = 0;
 #ifdef LINUX26
 					afd = accept4(i, (struct sockaddr *)&sin, &slen, SOCK_NONBLOCK);
 #else
 					afd = accept(i, (struct sockaddr *)&sin, &slen);
 #endif
-					if (afd < 0)
+					if (afd < 0) {
+						if (errno == EMFILE || errno == ENFILE)
+							heavy_load = 1;
 						break;
+					}
 					nodelay(afd);
 					pfds[afd].fd = afd;
 					pfds[afd].events = POLLIN;
@@ -400,6 +402,17 @@ int sshttp::loop()
 			}
 		}
 		calc_max_fd();
+
+		// we need to handle TIMEOUT_CLOSING cases in a different loop, as poll()
+		// will always renturn .revents = POLLHUP even if we ask for no events
+		for (map<int, time_t>::iterator it = shutdown_fds.begin(); it != shutdown_fds.end();) {
+			if (now - it->second > TIMEOUT_CLOSING || heavy_load) {
+				int fd = it->first;
+				shutdown_fds.erase(it++);
+				cleanup(fd);
+			} else
+				++it;
+		}
 	}
 	return 0;
 }

@@ -51,7 +51,11 @@ private:
 	int first_fd, max_fd;
 	uint16_t d_ssh_port, d_http_port;
 
+	std::map<int, time_t> shutdown_fds;
+
 	time_t now;
+
+	bool heavy_load;
 
 	std::string err;
 
@@ -66,7 +70,7 @@ private:
 	uint16_t find_port(int);
 
 public:
-	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), now(0), err("") {}
+	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), now(0), heavy_load(0), err("") {}
 
 	~sshttp() {};
 
@@ -101,7 +105,7 @@ typedef enum {
 enum {
 	TIMEOUT_PROTOCOL = 2,
 	TIMEOUT_CLOSING = 5,
-	TIMEOUT_HANGING  = 20
+	TIMEOUT_ALIVE  = 30
 };
 
 
