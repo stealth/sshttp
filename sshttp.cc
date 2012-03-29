@@ -370,13 +370,14 @@ int sshttp::loop()
 							pfds[i].events = POLLIN;
 						}
 						fd2state[fd2state[i]->peer_fd]->blen -= wn;
-					}
+					} else
+						pfds[i].events &= ~POLLOUT;
 				}
 
 				if (pfds[i].revents & POLLIN) {
 					// still data in buffer? dont read() new data
 					if (fd2state[i]->blen > 0) {
-						pfds[i].events = POLLIN;
+						pfds[i].events |= POLLIN;
 						pfds[fd2state[i]->peer_fd].events = POLLOUT|POLLIN;
 						pfds[i].revents = 0;
 						continue;
@@ -393,7 +394,7 @@ int sshttp::loop()
 					fd2state[i]->blen = n;
 					// peer has data to write
 					pfds[fd2state[i]->peer_fd].events = POLLOUT|POLLIN;
-					pfds[i].events = POLLIN;
+					pfds[i].events |= POLLIN;
 				}
 
 				pfds[i].revents = 0;
