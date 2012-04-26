@@ -10,7 +10,7 @@ CFLAGS=-c -O2 -Wall
 # SMTP/SSH multiplexer. The SSH_BANNER _must exaclty match_
 # what your real ssh server tells you, otherwise the ssh client
 # will detect the handshake as tempered, and will abort the
-# connection
+# connection. Newlines will be added by sshttpd itself.
 SMTP_DOMAIN=-DSMTP_DOMAIN=\"example.com\"
 SSH_BANNER=-DSSH_BANNER=\"SSH-2.0-OpenSSH_5.8\"
 

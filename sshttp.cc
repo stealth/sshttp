@@ -287,7 +287,7 @@ int sshttp::loop()
 
 	string smtp_ssh_banner = "220 ";
 	smtp_ssh_banner += SMTP_DOMAIN;
-	smtp_ssh_banner += " ESMTP Postifx\n";
+	smtp_ssh_banner += " ESMTP Postfix\n";
 	smtp_ssh_banner += SSH_BANNER;
 	smtp_ssh_banner += "\r\n";
 

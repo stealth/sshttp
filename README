@@ -9,7 +9,7 @@ sshttp can multiplex the following protocol pairs:
 
 - SSH/HTTP
 - SSH/HTTPS
-- SSH2/SMTP (without SMTP multiline banners)
+- SSH/SMTP (without SMTP multiline banners)
 
 sshttpd is an easy to use OSI-Layer5 switching daemon. It runs
 transparently on HTTP port (-L switch, default 80) and decides
@@ -26,13 +26,16 @@ your traffic destinated to TCP port 80.
 
 If you want to mux SMTP with sshttp, just give "25" as -L parameter, "2525"
 as -H parameter, and setup your smtp daemon to listen on 2525. Then
-edit the nf-setup script to match these ports. Done.
+edit the nf-setup script to match these ports. In the Makefile, change the
+SMTP_DOMAIN and SSH_BANNER to your needs (SSH_BANNER must match exactly
+yours of the running sshd).
+SMTP/SSH muxing was tested with OpenSSH client and Postfix client and server.
 
-You dont need to patch any of your ssh/web client or server software. It
+You dont need to patch any of your ssh/web/smtp client or server software. It
 works as is. sshttpd runs only on Linux and needs IP_TRANSPARENT support.
 It would work without, but by using IP_TRANSPARENT it is possible to even
 have unmodified syslogs, e.g. the original source IP/port of incoming connections
-is passed as-is to the SSH/HTTP servers.
+is passed as-is to the SSH/HTTP/SMTP servers.
 
 sshttpd is also a tricky anti-SSH0day (if ever:) and anti SSH-scanning/bruteforcing
 measurement.
