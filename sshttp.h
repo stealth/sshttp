@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Sebastian Krahmer.
+ * Copyright (C) 2010-2012 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -49,9 +49,7 @@ class sshttp {
 private:
 	struct pollfd *pfds;
 	int first_fd, max_fd;
-	uint16_t d_ssh_port, d_http_port;
-
-	std::map<int, time_t> shutdown_fds;
+	uint16_t d_ssh_port, d_http_port, d_local_port;
 
 	time_t now;
 
@@ -70,7 +68,7 @@ private:
 	uint16_t find_port(int);
 
 public:
-	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), now(0), heavy_load(0), err("") {}
+	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), d_local_port(80), now(0), heavy_load(0), err("") {}
 
 	~sshttp() {};
 
@@ -86,6 +84,8 @@ public:
 
 	int init(uint16_t);
 
+	int smtp_transition(int);
+
 	int loop();
 
 	const char *why();
@@ -94,9 +94,12 @@ public:
 
 typedef enum {
 	STATE_CONNECTING = 0,
+	STATE_BANNER_SENT,
+	STATE_BANNER_CONNECTING,
 	STATE_ACCEPTING,
 	STATE_DECIDING,
 	STATE_CONNECTED,
+	STATE_BANNER_CONNECTED,
 	STATE_CLOSING,
 	STATE_NONE
 } status_t;
@@ -104,6 +107,7 @@ typedef enum {
 
 enum {
 	TIMEOUT_PROTOCOL = 2,
+	TIMEOUT_MAILBANNER = 3,
 	TIMEOUT_CLOSING = 5,
 	TIMEOUT_ALIVE  = 30
 };

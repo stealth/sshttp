@@ -5,6 +5,12 @@ In case your FW policy forbids SSH access to the DMZ or internal
 network from outside, but you still want to use SSH on machines
 which only have one open port, e.g. HTTP, you can use "sshttpd".
 
+sshttp can multiplex the following protocol pairs:
+
+- SSH/HTTP
+- SSH/HTTPS
+- SSH2/SMTP (without SMTP multiline banners)
+
 sshttpd is an easy to use OSI-Layer5 switching daemon. It runs
 transparently on HTTP port (-L switch, default 80) and decides
 on incoming connections whether this is SSH or HTTP traffic.
@@ -17,6 +23,10 @@ are just fine) and run it to install the proxy rules.
 Your sshd has to run on $SSH_PORT and your webserver on $HTTP_PORT.
 Thats basically it. Go ahead and run sshttpd (as root) and it will layer5-switch
 your traffic destinated to TCP port 80.
+
+If you want to mux SMTP with sshttp, just give "25" as -L parameter, "2525"
+as -H parameter, and setup your smtp daemon to listen on 2525. Then
+edit the nf-setup script to match these ports. Done.
 
 You dont need to patch any of your ssh/web client or server software. It
 works as is. sshttpd runs only on Linux and needs IP_TRANSPARENT support.
@@ -36,7 +46,7 @@ It still runs this fixed number of threads no matter how many 1000s connection
 it handles at the same time.
 sshttpd also runs as user nobody in a chroot now (configurable via -U and -R switch)
 if compiled with USE_CAPS. It can now also distinguish between SSH and SSL
-sessions, you just have to use an LOCAL_PORT of 443 or 4433 and change
+sessions, you just have to use an LOCAL_PORT (-L) of 443 or 4433 and change
 the HTTP_PORT in the nf-setup script to match your webservers HTTPS port.
 You cannot mix HTTP/SSH and HTTPS/SSH in one sshttpd instance but you can
 run two sshttpd's to reach that goal: one on LOCAL_PORT 80 and one on

@@ -6,6 +6,15 @@ CFLAGS=-c -O2 -Wall
 # the ifeq's and the Linux def part.
 #
 
+# These defs have only relevance if you use sshttp as a
+# SMTP/SSH multiplexer. The SSH_BANNER _must exaclty match_
+# what your real ssh server tells you, otherwise the ssh client
+# will detect the handshake as tempered, and will abort the
+# connection
+SMTP_DOMAIN=-DSMTP_DOMAIN=\"example.com\"
+SSH_BANNER=-DSSH_BANNER=\"SSH-2.0-OpenSSH_5.8\"
+
+
 ifeq ($(shell uname -o), GNU/Linux)
 CFLAGS+=-DUSE_CAPS
 CFLAGS+=-DLINUX26
@@ -29,7 +38,7 @@ multicore.o: multicore.cc multicore.h
 	$(CXX) $(CFLAGS) multicore.cc
 
 sshttp.o: sshttp.cc sshttp.h
-	$(CXX) $(CFLAGS) -ansi -pedantic sshttp.cc
+	$(CXX) $(CFLAGS) -ansi -pedantic $(SMTP_DOMAIN) $(SSH_BANNER) sshttp.cc
 
 main.o: main.cc
 	$(CXX) $(CFLAGS) -ansi -pedantic main.cc

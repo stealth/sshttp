@@ -3,6 +3,10 @@
 # sshttp netfilter rules
 #
 
+# If you mux SSH/SMTP (rather than HTTP), then HTTP_PORT is your
+# alternate SMTP port. e.g. 2525 and sshttp needs to be started with
+# '-L 25 -H 2525'
+
 DEV=eth0
 SSH_PORT=22
 HTTP_PORT=8080

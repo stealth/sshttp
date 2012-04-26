@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2011 Sebastian Krahmer.
+ * Copyright (C) 2010-2012 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -64,6 +64,8 @@ int sshttp::init(uint16_t local_port)
 		return -1;
 	}
 
+	d_local_port = local_port;
+
 	// bind & listen
 	struct sockaddr_in sin;
 	memset(&sin, 0, sizeof(sin));
@@ -125,10 +127,6 @@ void sshttp::cleanup(int fd)
 	}
 	if (max_fd == fd)
 		--max_fd;
-
-	map<int, time_t>::iterator it = shutdown_fds.find(fd);
-	if (it != shutdown_fds.end())
-		shutdown_fds.erase(it);
 }
 
 
@@ -145,22 +143,22 @@ void sshttp::shutdown(int fd)
 		return;
 
 	::shutdown(fd, SHUT_RDWR);
-	shutdown_fds[fd] = now;
 
 	fd2state[fd]->state = STATE_CLOSING;
 	fd2state[fd]->blen = 0;
 
 	pfds[fd].fd = -1;
 	pfds[fd].events = pfds[fd].revents = 0;
-
-	if (max_fd == fd)
-		--max_fd;
 }
 
 
 void sshttp::calc_max_fd()
 {
 	for (int i = max_fd; i >= first_fd; --i) {
+		if (fd2state.count(i) > 0 && fd2state[i] && fd2state[i]->state != STATE_NONE) {
+			max_fd = i;
+			return;
+		}
 		if (pfds[i].fd != -1) {
 			max_fd = i;
 			return;
@@ -169,11 +167,129 @@ void sshttp::calc_max_fd()
 }
 
 
+int sshttp::smtp_transition(int fd)
+{
+	size_t n = 0;
+	int peer_fd = -1;
+	sockaddr_in dst;
+
+	if (fd2state[fd]->state == STATE_BANNER_SENT) {
+		pfds[fd].revents = 0;
+
+		// at least we want to see a 'SSH' or 'HEL'(O)
+		if ((n = read(fd, fd2state[fd]->buf, sizeof(fd2state[fd]->buf))) < 3) {
+			cleanup(fd);
+			return 0;
+		}
+
+		if (dstaddr(fd, &dst) < 0) {
+			err = "sshttp::smtp_transition::";
+			err += NS_Socket::why();
+			cleanup(fd);
+			return -1;
+		}
+
+		// the http-port is SMTP actually in this case
+		if (strncmp(fd2state[fd]->buf, "SSH", 3) == 0)
+			dst.sin_port = htons(d_ssh_port);
+		else
+			dst.sin_port = htons(d_http_port);
+
+		peer_fd  = tcp_connect_nb(dst, fd2state[fd]->from, 1);
+		if (peer_fd < 0) {
+			err = "sshttp::smtp_transition::";
+			err += NS_Socket::why();
+			cleanup(fd);
+			return -1;
+		}
+		fd2state[fd]->peer_fd = peer_fd;
+		fd2state[fd]->state = STATE_CONNECTED;
+		fd2state[fd]->last_t = now;
+		fd2state[fd]->blen = n;
+
+		if (fd2state.count(peer_fd) == 0) {
+			fd2state[peer_fd] = new (nothrow) status;
+			if (!fd2state[peer_fd]) {
+				err = "OOM";
+				cleanup(fd);
+				close(peer_fd);
+				return -1;
+			}
+		}
+
+		fd2state[peer_fd]->fd = peer_fd;
+		fd2state[peer_fd]->peer_fd = fd;
+		fd2state[peer_fd]->state = STATE_BANNER_CONNECTING;
+		fd2state[peer_fd]->last_t = now;
+
+		pfds[peer_fd].fd = peer_fd;
+		// POLLIN|POLLOUT b/c we wait for connection to finish
+		pfds[peer_fd].events = POLLIN|POLLOUT;
+		pfds[peer_fd].revents = 0;
+
+		pfds[fd].events = POLLIN;
+		if (peer_fd > max_fd)
+			max_fd = peer_fd;
+	} else if (fd2state[fd]->state == STATE_BANNER_CONNECTING) {
+		pfds[fd].revents = 0;
+
+		// special CONNECTING case, as we already sent a SMTP/SSH banner and need to
+		// drop the legit banner now
+		if (finish_connecting(fd) < 0) {
+			err = "sshttp::smtp_transition::";
+			err += NS_Socket::why();
+			cleanup(fd2state[fd]->peer_fd);
+			cleanup(fd);
+			return -1;
+		}
+		fd2state[fd]->state = STATE_BANNER_CONNECTED;
+		fd2state[fd]->last_t = now;
+		pfds[fd].events = POLLIN;
+	} else if (fd2state[fd]->state == STATE_BANNER_CONNECTED) {
+		pfds[fd].revents = 0;
+
+		// slurp in original banner, but drop it, as we already
+		// sent our SMTP+SSH banner
+		char dummy[1024], *crlf = NULL;
+		memset(dummy, 0, sizeof(dummy));
+		n = recv(fd, dummy, sizeof(dummy) - 1, MSG_PEEK);
+		if (n < 2 || (crlf = strstr(dummy, "\r\n")) == NULL) {
+			cleanup(fd2state[fd]->peer_fd);
+			cleanup(fd);
+			return 0;
+		}
+		if (read(fd, dummy, crlf - dummy + 2) <= 0) {
+			cleanup(fd2state[fd]->peer_fd);
+			cleanup(fd);
+			return 0;
+		}
+		// POLLOUT, because the legit peer already sent a banner reply
+		// which we kept in the buffer for forwarding
+		pfds[fd].events = POLLOUT;
+
+		// once we are in normal STATE_CONNECTED, the state machine goes
+		// as normal (as with HTTP)
+		fd2state[fd]->state = STATE_CONNECTED;
+		fd2state[fd]->last_t = now;
+	}
+
+	return 0;
+
+}
+
+
 int sshttp::loop()
 {
-	int i = 0, n = 0, wn = 0, afd = -1, peer_fd = -1;
+	int i = 0, afd = -1, peer_fd = -1;
+	ssize_t n = 0, wn = 0;
 	sockaddr_in sin, dst;
 	socklen_t slen = sizeof(sin);
+
+	string smtp_ssh_banner = "220 ";
+	smtp_ssh_banner += SMTP_DOMAIN;
+	smtp_ssh_banner += " ESMTP Postifx\n";
+	smtp_ssh_banner += SSH_BANNER;
+	smtp_ssh_banner += "\r\n";
 
 	for (;;) {
 		// Need to have a quite small timeout, since STATE_DECIDING may change without
@@ -185,19 +301,33 @@ int sshttp::loop()
 
 		// assert: pfds[i].fd == i
 		for (i = first_fd; i <= max_fd; ++i) {
-			if (pfds[i].fd == -1)
-				continue;
 
 			if (fd2state.count(i) == 0 || !fd2state[i])
 				continue;
 
+			if (heavy_load || fd2state[i]->state == STATE_CLOSING) {
+				if (now - fd2state[i]->last_t > TIMEOUT_CLOSING) {
+					cleanup(i);
+					continue;
+				}
+			}
+
+			if (pfds[i].fd == -1)
+				continue;
+
 			// timeout hanging connections (with pending data) but not accepting socket
-			if (now - fd2state[i]->last_t >=  TIMEOUT_ALIVE &&
+			if (now - fd2state[i]->last_t >= TIMEOUT_ALIVE &&
 			    fd2state[i]->state != STATE_ACCEPTING &&
 			    fd2state[i]->blen > 0) {
 				// always cleanup()/shutdown() in pairs! Otherwise re-used fd numbers
 				// make problems
 				cleanup(fd2state[i]->peer_fd);
+				cleanup(i);
+				continue;
+			}
+
+			if (fd2state[i]->state == STATE_BANNER_SENT &&
+			    now - fd2state[i]->last_t >= TIMEOUT_MAILBANNER) {
 				cleanup(i);
 				continue;
 			}
@@ -273,10 +403,27 @@ int sshttp::loop()
 
 			// First input data from a client. Now we need to decide where we go.
 			} else if (fd2state[i]->state == STATE_DECIDING) {
+
+				// special state transition if we mux SMTP/SSH
+				if (d_local_port == 25) {
+					if (writen(i, smtp_ssh_banner.c_str(), smtp_ssh_banner.size())
+					    != (ssize_t)smtp_ssh_banner.size()) {
+						cleanup(i);
+						continue;
+					}
+					pfds[i].events = POLLIN;
+					pfds[i].revents = 0;
+					fd2state[i]->state = STATE_BANNER_SENT;
+					fd2state[i]->last_t = now;
+					continue;
+				}
+
 				// allow up to two seconds for clients to send first proto stuff
-				if (pfds[i].revents == 0 && now - fd2state[i]->last_t < TIMEOUT_PROTOCOL)
+				if (pfds[i].revents == 0 &&
+				    now - fd2state[i]->last_t < TIMEOUT_PROTOCOL)
 					continue;
 				pfds[i].revents = 0;
+
 				if (dstaddr(i, &dst) < 0) {
 					err = "sshttp::loop::";
 					err += NS_Socket::why();
@@ -287,9 +434,9 @@ int sshttp::loop()
 
 				// error?
 				if (dst.sin_port == 0) {
-					err = "sshttp::loop: Error while detecting protocol.";
+					err = "sshttp::loop: Connection reset while detecting protocol.";
 					cleanup(i);
-					continue;
+					return -1;
 				}
 
 				peer_fd  = tcp_connect_nb(dst, fd2state[i]->from, 1);
@@ -323,10 +470,12 @@ int sshttp::loop()
 				pfds[peer_fd].events = POLLOUT|POLLIN;
 				pfds[peer_fd].revents = 0;
 
-				pfds[i].events = POLLOUT|POLLIN;
+				pfds[i].events = POLLIN;
 				if (peer_fd > max_fd)
 					max_fd = peer_fd;
 			} else if (fd2state[i]->state == STATE_CONNECTING) {
+				pfds[i].revents = 0;
+
 				if (finish_connecting(i) < 0) {
 					err = "sshttp::loop::";
 					err += NS_Socket::why();
@@ -336,14 +485,12 @@ int sshttp::loop()
 				}
 				fd2state[i]->state = STATE_CONNECTED;
 				fd2state[i]->last_t = now;
-				pfds[i].fd = i;
 				pfds[i].events = POLLIN;
-				pfds[i].revents = 0;
 			} else if (fd2state[i]->state == STATE_CONNECTED) {
 				// peer not ready yet
 				if (fd2state.count(fd2state[i]->peer_fd) == 0 ||
 				    !fd2state[fd2state[i]->peer_fd] ||
-				    fd2state[fd2state[i]->peer_fd]->state == STATE_CONNECTING) {
+				    fd2state[fd2state[i]->peer_fd]->state != STATE_CONNECTED) {
 					pfds[i].revents = 0;
 					continue;
 				}
@@ -400,20 +547,12 @@ int sshttp::loop()
 				pfds[i].revents = 0;
 				fd2state[i]->last_t = now;
 				fd2state[fd2state[i]->peer_fd]->last_t = now;
+			} else {
+				if (smtp_transition(i) < 0)
+					return -1;
 			}
 		}
 		calc_max_fd();
-
-		// we need to handle TIMEOUT_CLOSING cases in a different loop, as poll()
-		// will always renturn .revents = POLLHUP even if we ask for no events
-		for (map<int, time_t>::iterator it = shutdown_fds.begin(); it != shutdown_fds.end();) {
-			if (now - it->second > TIMEOUT_CLOSING || heavy_load) {
-				int fd = it->first;
-				shutdown_fds.erase(it++);
-				cleanup(fd);
-			} else
-				++it;
-		}
 	}
 	return 0;
 }
@@ -425,17 +564,15 @@ uint16_t sshttp::find_port(int fd)
 	int r = 0;
 	char buf[1024];
 
-	r = recv(fd, buf, sizeof(buf), MSG_PEEK);
+	r = recv(fd, buf, sizeof(buf) - 1, MSG_PEEK);
 
 	if ((r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) || r == 0)
 		return 0;
-	// No packet? -> SSH
+	// No packet (EAGAIN or EWOULDBLOCK) ? -> SSH
 	else if (r < 0)
 		return d_ssh_port;
 
-	if (string(buf).find("HTTP") != string::npos)
-		return d_http_port;
-	if (string(buf).find("SSH-") != string::npos)
+	if (strncmp(buf, "SSH-", 4) == 0)
 		return d_ssh_port;
 
 	// no string match? https! (covered by HTTP_PORT)
