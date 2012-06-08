@@ -7,7 +7,7 @@ CFLAGS=-c -O2 -Wall
 #
 
 # These defs have only relevance if you use sshttp as a
-# SMTP/SSH multiplexer. The SSH_BANNER _must exaclty match_
+# SMTP/SSH multiplexer. The SSH_BANNER _must match exactly_
 # what your real ssh server tells you, otherwise the ssh client
 # will detect the handshake as tempered, and will abort the
 # connection. Newlines will be added by sshttpd itself.
