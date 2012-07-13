@@ -305,8 +305,8 @@ int sshttp::loop()
 			if (fd2state.count(i) == 0 || !fd2state[i])
 				continue;
 
-			if (heavy_load || fd2state[i]->state == STATE_CLOSING) {
-				if (now - fd2state[i]->last_t > TIMEOUT_CLOSING) {
+			if (fd2state[i]->state == STATE_CLOSING) {
+				if (heavy_load || (now - fd2state[i]->last_t > TIMEOUT_CLOSING)) {
 					cleanup(i);
 					continue;
 				}
