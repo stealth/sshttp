@@ -1,0 +1,33 @@
+#!/bin/sh
+
+# sshttp netfilter rules
+#
+
+# If you mux SSH/SMTP (rather than HTTP), then HTTP_PORT is your
+# alternate SMTP port. e.g. 2525 and sshttp needs to be started with
+# '-L 25 -H 2525'
+
+DEV=eth0
+SSH_PORT=22
+HTTP_PORT=8080
+
+#if it clashes with complex NATing rules, try this
+#ip6tables -t mangle -F
+#ip6tables -t nat -F
+#ip6tables -t raw -F
+
+# block HTTP/SSH direct access
+ip6tables -A INPUT -i $DEV -p tcp --dport $SSH_PORT -j DROP
+ip6tables -A INPUT -i $DEV -p tcp --dport $HTTP_PORT -j DROP
+
+ip6tables -t mangle -N DIVERT || true
+ip6tables -t mangle -A OUTPUT -p tcp -o $DEV --sport $SSH_PORT -j DIVERT
+ip6tables -t mangle -A OUTPUT -p tcp -o $DEV --sport $HTTP_PORT -j DIVERT
+ip6tables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
+
+ip6tables -t mangle -A DIVERT -j MARK --set-mark 1
+ip6tables -t mangle -A DIVERT -j ACCEPT
+
+ip -6 rule add fwmark 1 lookup 123 || true
+ip -6 route add local ::/0 dev lo table 123
+
