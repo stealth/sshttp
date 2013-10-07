@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2010 Sebastian Krahmer.
+ * Copyright (C) 2001-2013 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,11 +42,17 @@
 #include <limits.h>
 #include <stdint.h>
 #include "socket.h"
+#include "config.h"
+
 
 namespace NS_Socket {
 
 #ifndef IP_TRANSPARENT
 const int IP_TRANSPARENT = 19;
+#endif
+
+#ifndef IPV6_TRANSPARENT
+const int IPV6_TRANSPARENT = 75;
 #endif
 
 using namespace std;
@@ -90,7 +96,7 @@ int reuse(int sock)
 #define LINUX22
 #endif
 
-int dstaddr(int sock, sockaddr_in *dst)
+int dstaddr(int sock, sockaddr *dst, socklen_t dlen)
 {
 	if (!dst) {
 		error = "NS_Socket::dstaddr: dst == NULL";
@@ -98,19 +104,29 @@ int dstaddr(int sock, sockaddr_in *dst)
 	}
 
 #ifdef LINUX22
-	socklen_t size = sizeof(sockaddr_in);
-	if (getsockname(sock, (struct sockaddr*)dst, &size) < 0) {
+	if (getsockname(sock, dst, &dlen) < 0) {
 		error = "NS_Socket::dstaddr::getsockname: ";
 		error += strerror(errno);
 		return -1;
 	}
 #elif defined(LINUX24) || defined(LINUX26)
 #include <linux/netfilter_ipv4.h>
-	socklen_t size = sizeof(sockaddr_in);
-	if (getsockopt(sock, SOL_IP, SO_ORIGINAL_DST, dst, &size) < 0) {
-		error = "NS_Socket::dstaddr::getsockopt: ";
-		error += strerror(errno);
-		return -1;
+	if (dlen == sizeof(sockaddr_in)) {
+		if (getsockopt(sock, SOL_IP, SO_ORIGINAL_DST, dst, &dlen) < 0) {
+			error = "NS_Socket::dstaddr::getsockopt:";
+			error += strerror(errno);
+			return -1;
+		}
+	} else {
+#include <linux/netfilter_ipv6.h>
+#ifndef IP6T_SO_ORIGINAL_DST
+#define IP6T_SO_ORIGINAL_DST 80
+#endif
+		if (getsockopt(sock, SOL_IPV6, IP6T_SO_ORIGINAL_DST, dst, &dlen) < 0) {
+			error = "NS_Socket::dstaddr::getsockopt:";
+			error += strerror(errno);
+			return -1;
+		}
 	}
 #else
 #error "Not supported on this OS yet."
@@ -119,12 +135,12 @@ int dstaddr(int sock, sockaddr_in *dst)
 }
 
 
-int bind_local(int sock, const struct sockaddr_in &sin, bool do_listen)
+int bind_local(int sock, const struct sockaddr *s, socklen_t slen, bool do_listen)
 {
 	if (reuse(sock) < 0)
 		return -1;
 
-	if (bind(sock, (struct sockaddr*)&sin, sizeof(sin)) < 0) {
+	if (bind(sock, s, slen) < 0) {
 		error = "NS_Socket::bind_local::bind:";
 		error += strerror(errno);
 		return -1;
@@ -143,9 +159,15 @@ int bind_local(int sock, const struct sockaddr_in &sin, bool do_listen)
 }
 
 
-int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from, bool transparent)
+int tcp_connect_nb(const struct sockaddr *to, socklen_t tolen, const struct sockaddr *from,
+	           socklen_t flen, bool transparent)
 {
-	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	int af = AF_INET;
+
+	if (tolen == sizeof(sockaddr_in6))
+		af = AF_INET6;
+
+	int sock = socket(af, SOCK_STREAM, 0);
 	if (sock < 0) {
 		error = "NS_Socket::tcp_connect_nb::socket:";
 		error += strerror(errno);
@@ -159,26 +181,39 @@ int tcp_connect_nb(const struct sockaddr_in &to, const struct sockaddr_in &from,
 		return -1;
 	}
 
-	if (from.sin_port != 0) {
-		int one = 1;
+	if (af == AF_INET) {
+		if (((sockaddr_in *)from)->sin_port != 0) {
+			int one = 1;
 #ifdef LINUX26
-		if (transparent && setsockopt(sock, SOL_IP, IP_TRANSPARENT, &one, sizeof(one)) < 0) {
+			if (transparent && setsockopt(sock, SOL_IP, IP_TRANSPARENT, &one, sizeof(one)) < 0) {
 #else
-		if (transparent && setsockopt(sock, IPPROTO_IP, IP_BINDANY, &one, sizeof(one)) < 0) {
+			if (transparent && setsockopt(sock, IPPROTO_IP, IP_BINDANY, &one, sizeof(one)) < 0) {
 #endif
+				error = "NS_Socket::tcp_connect_nb::setsockopt:";
+				error += strerror(errno);
+				close(sock);
+				return -1;
+			}
+			if (bind_local(sock, from, flen, 0) < 0) {
+				close(sock);
+				return -1;
+			}
+		}
+	} else if (((sockaddr_in6 *)from)->sin6_port != 0) {
+		int one = 1;
+		if (transparent && setsockopt(sock, SOL_IPV6, IPV6_TRANSPARENT, &one, sizeof(one)) < 0) {
 			error = "NS_Socket::tcp_connect_nb::setsockopt:";
 			error += strerror(errno);
 			close(sock);
 			return -1;
 		}
-		if (bind_local(sock, from, 0) < 0) {
+		if (bind_local(sock, from, flen, 0) < 0) {
 			close(sock);
 			return -1;
 		}
 	}
 
-	if (connect(sock, (struct sockaddr *)&to, sizeof(to)) < 0 &&
-	    errno != EINPROGRESS) {
+	if (connect(sock, to, tolen) < 0 && errno != EINPROGRESS) {
 		close(sock);
 		error = "NS_Socket::tcp_connect_nb::connect:";
 		error += strerror(errno);
@@ -223,7 +258,7 @@ int writen(int fd, const void *buf, size_t len)
 	char *ptr = (char*)buf;
 
 	while (len > 0) {
-		if ((n = write(fd, ptr+o, len)) <= 0) {
+		if ((n = write(fd, ptr + o, len)) <= 0) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK)
 				return o;
 			return n;

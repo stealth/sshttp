@@ -44,11 +44,11 @@ int nodelay(int sock);
 
 int reuse(int sock);
 
-int dstaddr(int sock, sockaddr_in *dst);
+int dstaddr(int sock, sockaddr *, socklen_t);
 
-int tcp_connect_nb(const struct sockaddr_in&, const struct sockaddr_in&, bool);
+int tcp_connect_nb(const struct sockaddr *, socklen_t, const struct sockaddr *, socklen_t, bool);
 
-int bind_local(int, const struct sockaddr_in&, bool);
+int bind_local(int, const struct sockaddr *, socklen_t, bool);
 
 int finish_connecting(int);
 

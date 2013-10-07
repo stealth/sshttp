@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2012 Sebastian Krahmer.
+ * Copyright (C) 2010-2013 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,9 +36,11 @@
 #include <errno.h>
 #include <string>
 #include <cstring>
+#include <cstdlib>
 #include <iostream>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -55,26 +57,36 @@ const char *sshttp::why()
 }
 
 
-int sshttp::init(uint16_t local_port)
+int sshttp::init(int f, const string &laddr, const string &lport)
 {
-	int sock_fd = socket(PF_INET, SOCK_STREAM, 0);
+	af = f;
+
+	int sock_fd = socket(af, SOCK_STREAM, 0);
 	if (sock_fd < 0) {
 		err = "sshttp::init::socket:";
-		err = strerror(errno);
+		err += strerror(errno);
 		return -1;
 	}
 
-	d_local_port = local_port;
+	d_local_port = strtoul(lport.c_str(), NULL, 10);
 
-	// bind & listen
-	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_port = htons(local_port);
-	if (bind_local(sock_fd, sin, 1) < 0) {
+	int r = 0;
+	addrinfo hint, *ai = NULL;
+	memset(&hint, 0, sizeof(hint));
+	hint.ai_family = af;
+	hint.ai_socktype = SOCK_STREAM;
+	if ((r = getaddrinfo(laddr.c_str(), lport.c_str(), &hint, &ai)) != 0) {
+		err = "sshttp::init::getaddrinfo:";
+		err += gai_strerror(r);
+		return -1;
+	}
+
+	if (bind_local(sock_fd, ai->ai_addr, ai->ai_addrlen, 1) < 0) {
 		err = NS_Socket::why();
 		return -1;
 	}
+
+	freeaddrinfo(ai);
 
 	// allocate poll array
 	struct rlimit rl;
@@ -171,7 +183,16 @@ int sshttp::smtp_transition(int fd)
 {
 	size_t n = 0;
 	int peer_fd = -1;
-	sockaddr_in dst;
+	sockaddr_in dst4;
+	sockaddr_in6 dst6;
+	sockaddr *dst = (sockaddr *)&dst4, *from = (sockaddr *)&fd2state[fd]->from4;
+	socklen_t slen = sizeof(dst4);
+
+	if (af == AF_INET6) {
+		dst = (sockaddr *)&dst6;
+		from = (sockaddr *)&fd2state[fd]->from6;
+		slen = sizeof(dst6);
+	}
 
 	if (fd2state[fd]->state == STATE_BANNER_SENT) {
 		pfds[fd].revents = 0;
@@ -182,7 +203,7 @@ int sshttp::smtp_transition(int fd)
 			return 0;
 		}
 
-		if (dstaddr(fd, &dst) < 0) {
+		if (dstaddr(fd, dst, slen) < 0) {
 			err = "sshttp::smtp_transition::";
 			err += NS_Socket::why();
 			cleanup(fd);
@@ -191,11 +212,11 @@ int sshttp::smtp_transition(int fd)
 
 		// the http-port is SMTP actually in this case
 		if (strncmp(fd2state[fd]->buf, "SSH", 3) == 0)
-			dst.sin_port = htons(d_ssh_port);
+			dst6.sin6_port = dst4.sin_port = htons(d_ssh_port);
 		else
-			dst.sin_port = htons(d_http_port);
+			dst6.sin6_port = dst4.sin_port = htons(d_http_port);
 
-		peer_fd  = tcp_connect_nb(dst, fd2state[fd]->from, 1);
+		peer_fd = tcp_connect_nb(dst, slen, from, slen, 1);
 		if (peer_fd < 0) {
 			err = "sshttp::smtp_transition::";
 			err += NS_Socket::why();
@@ -282,8 +303,16 @@ int sshttp::loop()
 {
 	int i = 0, afd = -1, peer_fd = -1;
 	ssize_t n = 0, wn = 0;
-	sockaddr_in sin, dst;
+	sockaddr_in sin4, dst4;
+	sockaddr_in6 sin6, dst6;
+	sockaddr *sin = (sockaddr *)&sin4, *dst = (sockaddr *)&dst4, *from = NULL;
 	socklen_t slen = sizeof(sin);
+
+	if (af == AF_INET6) {
+		slen = sizeof(sin6);
+		sin = (struct sockaddr *)&sin6;
+		dst = (struct sockaddr *)&dst6;
+	}
 
 	string smtp_ssh_banner = "220 ";
 	smtp_ssh_banner += SMTP_DOMAIN;
@@ -356,9 +385,9 @@ int sshttp::loop()
 				for (;;) {
 					heavy_load = 0;
 #ifdef LINUX26
-					afd = accept4(i, (struct sockaddr *)&sin, &slen, SOCK_NONBLOCK);
+					afd = accept4(i, sin, &slen, SOCK_NONBLOCK);
 #else
-					afd = accept(i, (struct sockaddr *)&sin, &slen);
+					afd = accept(i, sin, &slen);
 #endif
 					if (afd < 0) {
 						if (errno == EMFILE || errno == ENFILE)
@@ -393,7 +422,8 @@ int sshttp::loop()
 					fd2state[afd]->fd = afd;
 					fd2state[afd]->peer_fd = -1;
 					fd2state[afd]->state = STATE_DECIDING;
-					fd2state[afd]->from = sin;
+					fd2state[afd]->from4 = sin4;
+					fd2state[afd]->from6 = sin6;
 					fd2state[afd]->last_t = now;
 
 					if (afd > max_fd)
@@ -424,22 +454,27 @@ int sshttp::loop()
 					continue;
 				pfds[i].revents = 0;
 
-				if (dstaddr(i, &dst) < 0) {
+				if (dstaddr(i, dst, slen) < 0) {
 					err = "sshttp::loop::";
 					err += NS_Socket::why();
 					cleanup(i);
 					return -1;
 				}
-				dst.sin_port = htons(find_port(i));
+				dst6.sin6_port = dst4.sin_port = htons(find_port(i));
 
 				// error?
-				if (dst.sin_port == 0) {
+				if (dst4.sin_port == 0) {
 					err = "sshttp::loop: Connection reset while detecting protocol.";
 					cleanup(i);
 					return -1;
 				}
 
-				peer_fd  = tcp_connect_nb(dst, fd2state[i]->from, 1);
+				if (af == AF_INET)
+					from = (sockaddr *)&fd2state[i]->from4;
+				else
+					from = (sockaddr *)&fd2state[i]->from6;
+				peer_fd = tcp_connect_nb(dst, slen, from, slen, 1);
+
 				if (peer_fd < 0) {
 					err = "sshttp::loop::";
 					err += NS_Socket::why();

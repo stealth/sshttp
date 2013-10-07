@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Sebastian Krahmer.
+ * Copyright (C) 2010-2013 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,6 +41,7 @@
 #include <fcntl.h>
 #include <string>
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <pwd.h>
 #include <grp.h>
 #include <sys/time.h>
@@ -59,9 +60,11 @@ using namespace std;
 
 namespace Config
 {
-	uint16_t ssh_port = 22, http_port = 8080, local_port = 80;
+	uint16_t ssh_port = 22, http_port = 8080;
+	string local_port = "80", laddr = "0.0.0.0";
 	string root = "/var/lib/empty", user = "nobody";
 	int cores = -1, master = 1;
+	bool v6 = 0;
 }
 
 
@@ -89,9 +92,13 @@ void close_fds()
 int main(int argc, char **argv)
 {
 	int c;
+	int family = AF_INET;
 
-	while ((c = getopt(argc, argv, "S:H:L:R:U:n:")) != -1) {
+	while ((c = getopt(argc, argv, "S:H:L:R:U:n:6l:")) != -1) {
 		switch (c) {
+		case 'l':
+			Config::laddr = optarg;
+			break;
 		case 'S':
 			Config::ssh_port = atoi(optarg);
 			break;
@@ -99,7 +106,7 @@ int main(int argc, char **argv)
 			Config::http_port = atoi(optarg);
 			break;
 		case 'L':
-			Config::local_port = atoi(optarg);
+			Config::local_port = optarg;
 			break;
 		case 'R':
 			Config::root = optarg;
@@ -110,8 +117,14 @@ int main(int argc, char **argv)
 		case 'n':
 			Config::cores = atoi(optarg);
 			break;
+		case '6':
+			Config::v6 = 1;
+			family = AF_INET6;
+			if (Config::laddr == "0.0.0.0")
+				Config::laddr = "::";
+			break;
 		default:
-			printf("sshttpd [-n CPU cores] [-S ssh port] [-H http port] [-L local port] ");
+			printf("sshttpd [-n CPU cores] [-S ssh port] [-H http port] [-L lport] [-l laddr] [-6] ");
 #ifdef USE_CAPS
 			printf("[-U user] [-R chroot]");
 #endif
@@ -120,8 +133,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	printf("sshttpd: Using HTTP_PORT=%d SSH_PORT=%d and local port=%d. Going background.",
-	        Config::http_port, Config::ssh_port, Config::local_port);
+	printf("sshttpd: Using HTTP_PORT=%d SSH_PORT=%d and local port=%s. Going background.",
+	        Config::http_port, Config::ssh_port, Config::local_port.c_str());
 #ifdef USE_CAPS
 	printf(" Using caps/chroot.");
 #endif
@@ -133,7 +146,7 @@ int main(int argc, char **argv)
 	openlog("sshttpd", LOG_NOWAIT|LOG_PID|LOG_NDELAY, LOG_DAEMON);
 
 	sshttp sh;
-	if (sh.init(Config::local_port) < 0) {
+	if (sh.init(family, Config::laddr, Config::local_port) < 0) {
 		fprintf(stderr, "%s\n", sh.why());
 		exit(errno);
 	}

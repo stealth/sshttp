@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2012 Sebastian Krahmer.
+ * Copyright (C) 2010-2013 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,6 +53,8 @@ private:
 
 	time_t now;
 
+	int af;
+
 	bool heavy_load;
 
 	std::string err;
@@ -68,7 +70,8 @@ private:
 	uint16_t find_port(int);
 
 public:
-	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), d_local_port(80), now(0), heavy_load(0), err("") {}
+	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), d_local_port(80), now(0),
+	           af(AF_INET), heavy_load(0), err("") {}
 
 	~sshttp() {};
 
@@ -82,7 +85,7 @@ public:
 		d_http_port = p;
 	}
 
-	int init(uint16_t);
+	int init(int, const std::string &, const std::string &);
 
 	int smtp_transition(int);
 
@@ -119,7 +122,8 @@ struct status {
 	time_t last_t;
 	char buf[1024];
 	uint16_t blen;
-	struct sockaddr_in from;
+	struct sockaddr_in from4;
+	struct sockaddr_in6 from6;
 
 	status()
 	 : fd(-1), peer_fd(-1), state(STATE_NONE)
