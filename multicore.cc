@@ -20,7 +20,7 @@ using namespace std;
 int ncpus = 1;
 string err = "";
 
-#ifdef linux
+#ifdef __linux__
 #include <sched.h>
 
 static int get_cores()

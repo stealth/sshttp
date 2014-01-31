@@ -1,6 +1,6 @@
 # sshttp Makefile
 
-CFLAGS=-c -O2 -Wall
+CFLAGS=-c -O2 -Wall -ansi -pedantic
 
 # On BSD systems you either use gmake or you delete
 # the ifeq's and the Linux def part.
@@ -38,11 +38,11 @@ multicore.o: multicore.cc multicore.h
 	$(CXX) $(CFLAGS) multicore.cc
 
 sshttp.o: sshttp.cc sshttp.h
-	$(CXX) $(CFLAGS) -ansi -pedantic $(SMTP_DOMAIN) $(SSH_BANNER) sshttp.cc
+	$(CXX) $(CFLAGS) $(SMTP_DOMAIN) $(SSH_BANNER) sshttp.cc
 
 main.o: main.cc
-	$(CXX) $(CFLAGS) -ansi -pedantic main.cc
+	$(CXX) $(CFLAGS) main.cc
 
 socket.o: socket.cc socket.h
-	$(CXX) $(CFLAGS) -ansi -pedantic socket.cc
+	$(CXX) $(CFLAGS) socket.cc
 
