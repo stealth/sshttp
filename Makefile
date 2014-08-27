@@ -28,7 +28,7 @@ CXX=c++
 LD=ld
 
 all: socket.o main.o sshttp.o multicore.o
-	$(CXX) *.o $(LIBS) -o sshttpd
+	$(CXX) *.o -o sshttpd $(LIBS)
 
 clean:
 	rm -rf *.o sshttpd
