@@ -1,12 +1,12 @@
-sshttp - hiding SSH servers behind HTTP servers
-===============================================
+sshttp - hiding SSH servers behind HTTP
+=======================================
 
 0. Intro
 --------
 
-In case your FW policy forbids _SSH_ access to the DMZ or internal
+In case your FW policy forbids __SSH__ access to the DMZ or internal
 network from outside, but you still want to use ssh on machines
-which only have one open port, e.g. _HTTP_, you can use `sshttpd`.
+which only have one open port, e.g. __HTTP__, you can use `sshttpd`.
 
 _sshttpd_ can multiplex the following protocol pairs:
 
@@ -24,14 +24,14 @@ as libcap/libcap-devel if you want to use the capability feature.
     $ make
 
 
-1. Setup for one host
-----------------------
+2. Setup for single host
+------------------------
 
 _sshttpd_ is an easy to use OSI-Layer5 switching daemon. It runs
-transparently on HTTP port (`-L` switch, default 80) and decides
-on incoming connections whether this is _SSH_ or _HTTP_ traffic.
-If its _HTTP_ traffic it switches the traffic to the `HTTP_PORT`
-(`-H`, default 8080) and if its _SSH_ traffic to `SSH_PORT` (`-S`, default
+transparently on __HTTP__ port (`-L` switch, default 80) and decides
+on incoming connections whether this is __SSH__ or __HTTP__ traffic.
+If its __HTTP__ traffic it switches the traffic to the `HTTP_PORT`
+(`-H`, default 8080) and if its __SSH__ traffic to `SSH_PORT` (`-S`, default
 22) respectively.
 
 You might need to edit `nf-setup` script to match your ports (`22`, `80` and `8080`
@@ -40,7 +40,7 @@ Your _sshd_ has to run on `$SSH_PORT` and your webserver on `$HTTP_PORT`.
 Thats basically it. Go ahead and run _sshttpd_ (as root) and it will layer5-switch
 your traffic destinated to TCP port 80.
 
-If you want to mux _SMTP_ with _sshttpd_, just give `25` as `-L` parameter, `2525`
+If you want to mux __SMTP__ with _sshttpd_, just give `25` as `-L` parameter, `2525`
 as `-H` parameter, and setup your smtp daemon to listen on 2525. Then
 edit the `nf-setup` script to match these ports. In the `Makefile`, change the
 `SMTP_DOMAIN` and `SSH_BANNER` to your needs (`SSH_BANNER` must match exactly
@@ -51,19 +51,19 @@ When muxing IPv6 connections, the setup is basically the same; just use the `nf6
 script and invoke _sshttpd_ with `-6`.
 
 
-Do not forget to `modprobe nf_conntrack_ipv4` (or v6).
+Do not forget to `modprobe nf_conntrack_ipv4` or `modprobe nf_conntrack_ipv6`.
 
 
-2. Transparent proxy setup
+3. Transparent proxy setup
 --------------------------
 
 You can run _sshttpd_ also on your gateway machine and transparently proxy/mux
-all of your HTTP/SSH traffic to your internal LAN. To do so, run _sshttpd_ with
+all of your _HTTP/SSH_ traffic to your internal LAN. To do so, run _sshttpd_ with
 `-T` and use `nf-tproxy` rather than `nf-setup`. Before you do so, carefully
 read `nf-tproxy` so you dont lock yourself out of the network.
 
 
-3. Misc
+4. Misc
 -------
 
 You dont need to patch any of your ssh/web/smtp client or server software. It
@@ -85,9 +85,9 @@ to better exploit the hardware if running on heavily used web servers.
 It still runs this fixed number of threads no matter how many 1000s connection
 it handles at the same time.
 _sshttpd_ runs as `nobody` user inside a `chroot()` (configurable via `-U` and `-R` switch)
-if compiled with `USE_CAPS`. It can also distinguish between _SSH_ and _SSL_
+if compiled with `USE_CAPS`. It can also distinguish between __SSH__ and __SSL__
 sessions, you just have to use an `LOCAL_PORT (-L)` of 443 or 4433 and change
-the `HTTP_PORT` in the `nf-setup` script to match your webservers _HTTPS_ port.
+the `HTTP_PORT` in the `nf-setup` script to match your webservers __HTTPS__ port.
 You cannot mix HTTP/SSH and HTTPS/SSH in one _sshttpd_ instance but you can
 run two sshttpd's to reach that goal: one on `LOCAL_PORT 80` and one on
 `LOCAL_PORT 443`.
