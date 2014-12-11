@@ -19,7 +19,7 @@ _sshttpd_ can multiplex the following protocol pairs:
 ---------
 
 Be sure you run recent Linux kernel and install `nf-conntrack` as well
-as libcap/libcap-devel if you want to use the capability feature.
+as `libcap` and `libcap-devel` if you want to use the capability feature.
 
     $ make
 
@@ -58,7 +58,7 @@ Do not forget to `modprobe nf_conntrack_ipv4` or `modprobe nf_conntrack_ipv6`.
 --------------------------
 
 You can run _sshttpd_ also on your gateway machine and transparently proxy/mux
-all of your _HTTP/SSH_ traffic to your internal LAN. To do so, run _sshttpd_ with
+all of your __HTTP/SSH__ traffic to your internal LAN. To do so, run _sshttpd_ with
 `-T` and use `nf-tproxy` rather than `nf-setup`. Before you do so, carefully
 read `nf-tproxy` so you dont lock yourself out of the network.
 
