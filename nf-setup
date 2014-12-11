@@ -16,6 +16,8 @@ HTTP_PORT=8080
 #iptables -t nat -F
 #iptables -t raw -F
 
+modprobe nf_conntrack_ipv4 || true
+
 # block HTTP/SSH direct access
 iptables -A INPUT -i $DEV -p tcp --dport $SSH_PORT -j DROP
 iptables -A INPUT -i $DEV -p tcp --dport $HTTP_PORT -j DROP

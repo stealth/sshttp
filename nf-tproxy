@@ -20,6 +20,8 @@ SERVICE_PORT=80	# port to outside (external)
 SSH_HOSTS="192.168.0.33 192.168.0.34"
 HTTP_HOSTS="192.168.0.33 192.168.0.34"
 
+modprobe nf_conntrack_ipv4 || true
+
 iptables -t mangle -F
 iptables -t nat -F
 iptables -t raw -F

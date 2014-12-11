@@ -16,6 +16,8 @@ HTTP_PORT=8080
 #ip6tables -t nat -F
 #ip6tables -t raw -F
 
+modprobe nf_conntrack_ipv6 || true
+
 # block HTTP/SSH direct access
 ip6tables -A INPUT -i $DEV -p tcp --dport $SSH_PORT -j DROP
 ip6tables -A INPUT -i $DEV -p tcp --dport $HTTP_PORT -j DROP
