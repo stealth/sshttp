@@ -65,6 +65,7 @@ namespace Config
 	string root = "/var/lib/empty", user = "nobody";
 	int cores = -1, master = 1;
 	bool v6 = 0;
+	bool tproxy = 0;
 }
 
 
@@ -94,8 +95,11 @@ int main(int argc, char **argv)
 	int c;
 	int family = AF_INET;
 
-	while ((c = getopt(argc, argv, "S:H:L:R:U:n:6l:")) != -1) {
+	while ((c = getopt(argc, argv, "S:H:L:R:U:n:6l:iT")) != -1) {
 		switch (c) {
+		case 'T':
+			Config::tproxy = 1;
+			break;
 		case 'l':
 			Config::laddr = optarg;
 			break;
@@ -146,7 +150,7 @@ int main(int argc, char **argv)
 	openlog("sshttpd", LOG_NOWAIT|LOG_PID|LOG_NDELAY, LOG_DAEMON);
 
 	sshttp sh;
-	if (sh.init(family, Config::laddr, Config::local_port) < 0) {
+	if (sh.init(family, Config::laddr, Config::local_port, Config::tproxy) < 0) {
 		fprintf(stderr, "%s\n", sh.why());
 		exit(errno);
 	}

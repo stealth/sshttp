@@ -1,0 +1,70 @@
+#!/bin/sh
+
+# sshttp tproxy netfilter rules
+#
+
+
+# sshttpd -L 1234 -S 22 -H 8080 -T
+
+INDEV=eth1	# internal NIC
+EXDEV=eth0	# external NIC
+
+
+SSH_PORT=22	# ssh port on internal
+HTTP_PORT=8080	# http(s) port on internal
+LOCAL_PORT=1234	# -L for sshttp
+
+SERVICE_PORT=80	# port to outside (external)
+
+# only allow access to these internal hosts
+SSH_HOSTS="192.168.0.33 192.168.0.34"
+HTTP_HOSTS="192.168.0.33 192.168.0.34"
+
+iptables -t mangle -F
+iptables -t nat -F
+iptables -t raw -F
+iptables -F
+
+iptables -P FORWARD DROP
+iptables -P INPUT DROP
+iptables -P OUTPUT ACCEPT
+
+
+iptables -A INPUT -p tcp --dport $SERVICE_PORT -j ACCEPT
+iptables -A INPUT -i $INDEV -p tcp --sport $SSH_PORT -j ACCEPT
+iptables -A INPUT -i $INDEV -p tcp --sport $HTTP_PORT -j ACCEPT
+
+
+# we already have DROP policy, but in case its changed above
+iptables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
+iptables -A FORWARD -p tcp --dport $LOCAL_PORT -j DROP
+iptables -A FORWARD -p tcp --dport $SSH_PORT -j DROP
+iptables -A FORWARD -p tcp --dport $HTTP_PORT -j DROP
+
+
+# !!! Add your other filtering rules for FORWARD and INPUT here
+# !!! you may want to allow ssh access to your GW machine, and want to forbid some of
+# !!! the HTTP or SSH access to ssh and http hosts (all of $SSH_HOSTS and $HTTP_HOSTS are
+# !!! allowed to ssh AND http port). To forbid a http connect to a certain ssh machine,
+# !!! add a REJECT target on the OUTPUT chain.
+
+
+iptables -t mangle -N DIVERT || true
+
+for h in $SSH_HOSTS; do
+	iptables -t mangle -A PREROUTING -i $EXDEV -p tcp -d $h --dport $SERVICE_PORT -j TPROXY --tproxy-mark 0x1/0x1 --on-port $LOCAL_PORT
+done
+
+for h in $HTTP_HOSTS; do
+	iptables -t mangle -A PREROUTING -i $EXDEV -p tcp -d $h --dport $SERVICE_PORT -j TPROXY --tproxy-mark 0x1/0x1 --on-port $LOCAL_PORT
+done
+
+
+iptables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
+
+iptables -t mangle -A DIVERT -j MARK --set-mark 1
+iptables -t mangle -A DIVERT -j ACCEPT
+
+ip rule add fwmark 1 lookup 123 || true
+ip route add local 0.0.0.0/0 dev lo table 123
+

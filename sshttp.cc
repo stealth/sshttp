@@ -57,7 +57,7 @@ const char *sshttp::why()
 }
 
 
-int sshttp::init(int f, const string &laddr, const string &lport)
+int sshttp::init(int f, const string &laddr, const string &lport, bool tproxy)
 {
 	af = f;
 
@@ -79,6 +79,14 @@ int sshttp::init(int f, const string &laddr, const string &lport)
 		err = "sshttp::init::getaddrinfo:";
 		err += gai_strerror(r);
 		return -1;
+	}
+
+	// -j TPROXY
+	if (tproxy) {
+		if (transparent(af, sock_fd) < 0) {
+			err = NS_Socket::why();
+			return -1;
+		}
 	}
 
 	if (bind_local(sock_fd, ai->ai_addr, ai->ai_addrlen, 1) < 0) {

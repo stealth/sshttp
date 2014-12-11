@@ -64,6 +64,7 @@ const char *why()
 	return error.c_str();
 }
 
+
 int nodelay(int sock)
 {
 	int one = 1;
@@ -77,6 +78,23 @@ int nodelay(int sock)
 
 	return 0;
 }
+
+
+int transparent(int af, int sock)
+{
+	int one = 1, level = SOL_IP, op = IP_TRANSPARENT;
+	if (af == AF_INET6) {
+		level = SOL_IPV6;
+		op = IPV6_TRANSPARENT;
+	}
+	if (setsockopt(sock, level, op, &one, sizeof(one)) < 0) {
+		error = "NS_Socket::transparent::setsockopt:";
+		error += strerror(errno);
+		return -1;
+	}
+	return 0;
+}
+
 
 int reuse(int sock)
 {
@@ -160,7 +178,7 @@ int bind_local(int sock, const struct sockaddr *s, socklen_t slen, bool do_liste
 
 
 int tcp_connect_nb(const struct sockaddr *to, socklen_t tolen, const struct sockaddr *from,
-	           socklen_t flen, bool transparent)
+	           socklen_t flen, bool make_transparent)
 {
 	int af = AF_INET;
 
@@ -183,14 +201,8 @@ int tcp_connect_nb(const struct sockaddr *to, socklen_t tolen, const struct sock
 
 	if (af == AF_INET) {
 		if (((sockaddr_in *)from)->sin_port != 0) {
-			int one = 1;
-#ifdef LINUX26
-			if (transparent && setsockopt(sock, SOL_IP, IP_TRANSPARENT, &one, sizeof(one)) < 0) {
-#else
-			if (transparent && setsockopt(sock, IPPROTO_IP, IP_BINDANY, &one, sizeof(one)) < 0) {
-#endif
-				error = "NS_Socket::tcp_connect_nb::setsockopt:";
-				error += strerror(errno);
+			if (make_transparent && transparent(af, sock) < 0) {
+				error = NS_Socket::why();
 				close(sock);
 				return -1;
 			}
@@ -200,10 +212,8 @@ int tcp_connect_nb(const struct sockaddr *to, socklen_t tolen, const struct sock
 			}
 		}
 	} else if (((sockaddr_in6 *)from)->sin6_port != 0) {
-		int one = 1;
-		if (transparent && setsockopt(sock, SOL_IPV6, IPV6_TRANSPARENT, &one, sizeof(one)) < 0) {
-			error = "NS_Socket::tcp_connect_nb::setsockopt:";
-			error += strerror(errno);
+		if (make_transparent && transparent(af, sock) < 0) {
+			error = NS_Socket::why();
 			close(sock);
 			return -1;
 		}
@@ -222,6 +232,7 @@ int tcp_connect_nb(const struct sockaddr *to, socklen_t tolen, const struct sock
 
 	return sock;
 }
+
 
 int finish_connecting(int fd)
 {

@@ -44,6 +44,8 @@ int nodelay(int sock);
 
 int reuse(int sock);
 
+int transparent(int af, int sock);
+
 int dstaddr(int sock, sockaddr *, socklen_t);
 
 int tcp_connect_nb(const struct sockaddr *, socklen_t, const struct sockaddr *, socklen_t, bool);

@@ -85,7 +85,7 @@ public:
 		d_http_port = p;
 	}
 
-	int init(int, const std::string &, const std::string &);
+	int init(int, const std::string &, const std::string &, bool tproxy = false);
 
 	int smtp_transition(int);
 
