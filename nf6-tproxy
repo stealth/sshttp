@@ -1,0 +1,71 @@
+#!/bin/sh
+
+# sshttp tproxy netfilter rules
+#
+
+
+# sshttpd -L 1234 -S 22 -H 4343 -T -6
+
+INDEV=eth1	# internal NIC
+EXDEV=eth0	# external NIC
+
+
+SSH_PORT=22	# ssh port on internal
+HTTP_PORT=4343	# http(s) port on internal
+LOCAL_PORT=1234	# -L for sshttp
+
+SERVICE_PORT=443	# port to outside (external)
+
+# only allow access to these internal hosts
+SSH_HOSTS="3000::1 3000::2"
+HTTP_HOSTS="3000::1 3000::2"
+
+modprobe nf_conntrack_ipv6 || true
+
+ip6tables -t mangle -F
+ip6tables -t raw -F
+ip6tables -F
+
+ip6tables -P FORWARD DROP
+ip6tables -P INPUT ACCEPT	# ip6tables needs ACCEPT here?
+ip6tables -P OUTPUT ACCEPT
+
+
+ip6tables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
+ip6tables -A INPUT -p tcp --dport $SERVICE_PORT -j ACCEPT
+ip6tables -A INPUT -i $INDEV -p tcp --sport $SSH_PORT -j ACCEPT
+ip6tables -A INPUT -i $INDEV -p tcp --sport $HTTP_PORT -j ACCEPT
+
+
+# we already have DROP policy, but in case its changed above
+ip6tables -A FORWARD -p tcp --dport $LOCAL_PORT -j DROP
+ip6tables -A FORWARD -p tcp --dport $SSH_PORT -j DROP
+ip6tables -A FORWARD -p tcp --dport $HTTP_PORT -j DROP
+
+
+# !!! Add your other filtering rules for FORWARD and INPUT here
+# !!! you may want to allow ssh access to your GW machine, and want to forbid some of
+# !!! the HTTP or SSH access to ssh and http hosts (all of $SSH_HOSTS and $HTTP_HOSTS are
+# !!! allowed to ssh AND http port). To forbid a http connect to a certain ssh machine,
+# !!! add a REJECT target on the OUTPUT chain.
+
+
+ip6tables -t mangle -N DIVERT || true
+
+for h in $SSH_HOSTS; do
+	ip6tables -t mangle -A PREROUTING -i $EXDEV -p tcp -d $h --dport $SERVICE_PORT -j TPROXY --tproxy-mark 0x1/0x1 --on-port $LOCAL_PORT
+done
+
+for h in $HTTP_HOSTS; do
+	ip6tables -t mangle -A PREROUTING -i $EXDEV -p tcp -d $h --dport $SERVICE_PORT -j TPROXY --tproxy-mark 0x1/0x1 --on-port $LOCAL_PORT
+done
+
+
+ip6tables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
+
+ip6tables -t mangle -A DIVERT -j MARK --set-mark 1
+ip6tables -t mangle -A DIVERT -j ACCEPT
+
+ip -6 rule add fwmark 1 lookup 123 || true
+ip -6 route add local ::/0 dev lo table 123
+
