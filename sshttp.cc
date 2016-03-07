@@ -513,9 +513,13 @@ int sshttp::loop()
 				pfds[peer_fd].events = POLLOUT|POLLIN;
 				pfds[peer_fd].revents = 0;
 
-				pfds[i].events = POLLIN;
+				// No POLLIN. makes no sense as long as peer hasnt
+				// finished connecting. Next state will set it to POLLIN once
+				// both peers are established and ready
+				pfds[i].events = 0;
 				if (peer_fd > max_fd)
 					max_fd = peer_fd;
+
 			} else if (fd2state[i]->state == STATE_CONNECTING) {
 				pfds[i].revents = 0;
 
@@ -529,8 +533,13 @@ int sshttp::loop()
 				fd2state[i]->state = STATE_CONNECTED;
 				fd2state[i]->last_t = now;
 				pfds[i].events = POLLIN;
+
+				// see above comment in last state when events was 0.
+				// peer is guranteed to exist, since was setup in last state
+				pfds[fd2state[i]->peer_fd].events = POLLIN;
+
 			} else if (fd2state[i]->state == STATE_CONNECTED) {
-				// peer not ready yet
+				// peer not ready yet (should not happen)
 				if (fd2state.count(fd2state[i]->peer_fd) == 0 ||
 				    !fd2state[fd2state[i]->peer_fd] ||
 				    fd2state[fd2state[i]->peer_fd]->state != STATE_CONNECTED) {
@@ -544,31 +553,40 @@ int sshttp::loop()
 						wn = writen(i, fd2state[fd2state[i]->peer_fd]->buf, n);
 
 						// error for i, but let kernel flush internal sendbuffer
-						// for peer
-						if (wn <= 0) {
+						// for peer (wn > n shouldnt really happen)
+						if (wn <= 0 || wn > n) {
 							shutdown(fd2state[i]->peer_fd);
 							cleanup(i);
 							continue;
 						}
 						// non blocking write couldnt write it all at once
-						if (wn != n) {
+						if (wn < n) {
 							memmove(fd2state[fd2state[i]->peer_fd]->buf,
 							        fd2state[fd2state[i]->peer_fd]->buf + wn,
 							         n - wn);
-							pfds[i].events = POLLOUT|POLLIN;
+							// more pending data to send here, no need for new peer in data
+							pfds[i].events |= POLLOUT;
+							pfds[fd2state[i]->peer_fd].events &= ~POLLIN;
 						} else {
-							pfds[i].events = POLLIN;
+							pfds[i].events &= ~POLLOUT;
+							// peer data was just all flushed out, so accept new data to read
+							// from peer
+							pfds[fd2state[i]->peer_fd].events |= POLLIN;
 						}
 						fd2state[fd2state[i]->peer_fd]->blen -= wn;
-					} else
+					} else {
+						// no data to send, so take away from output poll for now
+						// and ask for data to read via peer
 						pfds[i].events &= ~POLLOUT;
+						pfds[fd2state[i]->peer_fd].events |= POLLIN;
+					}
 				}
 
 				if (pfds[i].revents & POLLIN) {
 					// still data in buffer? dont read() new data
 					if (fd2state[i]->blen > 0) {
-						pfds[i].events |= POLLIN;
-						pfds[fd2state[i]->peer_fd].events = POLLOUT|POLLIN;
+						pfds[i].events &= ~POLLIN;
+						pfds[fd2state[i]->peer_fd].events |= POLLOUT;
 						pfds[i].revents = 0;
 						continue;
 					}
@@ -583,13 +601,18 @@ int sshttp::loop()
 					}
 					fd2state[i]->blen = n;
 					// peer has data to write
-					pfds[fd2state[i]->peer_fd].events = POLLOUT|POLLIN;
-					pfds[i].events |= POLLIN;
+					pfds[i].events &= ~POLLIN;
+					pfds[fd2state[i]->peer_fd].events |= POLLOUT;
 				}
+
+				// if empty in-buffer, accept new input data in any case
+				if (fd2state[i]->blen == 0)
+					pfds[i].events |= POLLIN;
 
 				pfds[i].revents = 0;
 				fd2state[i]->last_t = now;
 				fd2state[fd2state[i]->peer_fd]->last_t = now;
+
 			} else {
 				if (smtp_transition(i) < 0)
 					return -1;
