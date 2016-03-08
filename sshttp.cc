@@ -321,7 +321,6 @@ int sshttp::loop()
 {
 	int i = 0, afd = -1, peer_fd = -1;
 	ssize_t n = 0, wn = 0;
-	loff_t off1 = 0, off2 = 0;
 	sockaddr_in sin4, dst4;
 	sockaddr_in6 sin6, dst6;
 	sockaddr *sin = (sockaddr *)&sin4, *dst = (sockaddr *)&dst4, *from = NULL;
@@ -366,7 +365,7 @@ int sshttp::loop()
 			// timeout hanging connections (with pending data) but not accepting socket
 			if (now - fd2state[i]->last_t >= TIMEOUT_ALIVE &&
 			    fd2state[i]->state != STATE_ACCEPTING &&
-			    fd2state[i]->blen > 0) {
+			    (fd2state[i]->blen > 0 || fd2state[i]->plen > 0)) {
 				// always cleanup()/shutdown() in pairs! Otherwise re-used fd numbers
 				// make problems
 				cleanup(fd2state[i]->peer_fd);
@@ -386,10 +385,8 @@ int sshttp::loop()
 				if (fd2state[i]->state == STATE_CONNECTED) {
 					if (fd2state[i]->blen > 0)
 						writen(fd2state[i]->peer_fd, fd2state[i]->buf, fd2state[i]->blen);
-					if (fd2state[i]->plen > 0) {
-						off1 = off2 = 0;
-						splice(fd2state[i]->p[0], &off1, fd2state[i]->peer_fd, &off2, fd2state[i]->plen, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
-					}
+					if (fd2state[i]->plen > 0)
+						splice(fd2state[i]->p[0], NULL, fd2state[i]->peer_fd, NULL, fd2state[i]->plen, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
 					fd2state[i]->blen = 0;
 					fd2state[i]->plen = 0;
 				}
@@ -580,8 +577,7 @@ int sshttp::loop()
 				if (pfds[i].revents & POLLOUT) {
 					// actually data to send?
 					if ((n = fd2state[fd2state[i]->peer_fd]->plen) > 0) {
-						off1 = off2 = 0;
-						wn = splice(fd2state[fd2state[i]->peer_fd]->p[0], &off1, i, &off2, n, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
+						wn = splice(fd2state[fd2state[i]->peer_fd]->p[0], NULL, i, NULL, n, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
 						//wn = writen(i, fd2state[fd2state[i]->peer_fd]->buf, n);
 
 						// error for i, but let kernel flush internal sendbuffer
@@ -619,25 +615,24 @@ int sshttp::loop()
 						pfds[i].revents = 0;
 						continue;
 					}
-					off1 = off2 = 0;
-					n = splice(i, &off1, fd2state[i]->p[1], &off2, SPLICE_SIZE, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
+					n = splice(i, NULL, fd2state[i]->p[1], NULL, SPLICE_SIZE, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
 					//n = read(i, fd2state[i]->buf, sizeof(fd2state[i]->buf));
 
-					// No need to writen() pending data on read error here, as above blen check
+					// No need to writen() pending data on read error here, as above plen check
 					// ensured no pending data can happen here
 					if (n <= 0) {
 						shutdown(fd2state[i]->peer_fd);
 						cleanup(i);
 						continue;
 					}
-					fd2state[i]->blen = n;
+					fd2state[i]->plen = n;
 					// peer has data to write
 					pfds[i].events &= ~POLLIN;
 					pfds[fd2state[i]->peer_fd].events |= POLLOUT;
 				}
 
 				// if empty in-buffer, accept new input data in any case
-				if (fd2state[i]->blen == 0)
+				if (fd2state[i]->plen == 0)
 					pfds[i].events |= POLLIN;
 
 				pfds[i].revents = 0;
