@@ -102,13 +102,18 @@ int sshttp::init(int f, const string &laddr, const string &lport, bool tproxy)
 
 	// allocate poll array
 	struct rlimit rl;
-	rl.rlim_cur = (1<<16);
-	rl.rlim_max = (1<<16);
+	rl.rlim_cur = (1<<20);
+	rl.rlim_max = (1<<20);
 
 	if (setrlimit(RLIMIT_NOFILE, &rl) < 0) {
-		err = "sshttp::init::setrlimit:";
-		err = strerror(errno);
-		return -1;
+		rl.rlim_cur = (1<<16);
+		rl.rlim_max = (1<<16);
+
+		if (setrlimit(RLIMIT_NOFILE, &rl) < 0) {
+			err = "sshttp::init::setrlimit:";
+			err = strerror(errno);
+			return -1;
+		}
 	}
 
 	int flags = fcntl(sock_fd, F_GETFL);
@@ -507,10 +512,9 @@ int sshttp::loop()
 				fd2state[i]->state = STATE_CONNECTED;
 				fd2state[i]->last_t = now;
 				if (pipe2(fd2state[i]->p, O_NONBLOCK) < 0) {
-					err = "sshttp::loop: pipe: ";
-					err += strerror(errno);
+					heavy_load = 1;
 					cleanup(i);
-					return -1;
+					continue;
 				}
 
 				if (fd2state.count(peer_fd) == 0) {
@@ -528,11 +532,10 @@ int sshttp::loop()
 				fd2state[peer_fd]->state = STATE_CONNECTING;
 				fd2state[peer_fd]->last_t = now;
 				if (pipe2(fd2state[peer_fd]->p, O_NONBLOCK) < 0) {
-					err = "sshttp::loop: pipe: ";
-					err += strerror(errno);
+					heavy_load = 1;
 					cleanup(i);
 					cleanup(peer_fd);
-					return -1;
+					continue;
 				}
 
 				pfds[peer_fd].fd = peer_fd;
