@@ -25,6 +25,13 @@ as `libcap` and `libcap-devel` if you want to use the capability feature.
 
     $ make
 
+There is a new `splice` branch inside the git. `git checkout splice`
+before `make`, if you want to test this new branch. It implements
+zero-copy in terms of the __splice(2)__ system call which has a performance
+benefit since it avoids copying the network data between user and kernel
+land back and forth (__read()/write()__), which could also just be spliced kernel-internally
+at the "extra cost" of two additional pipe descriptors per connection.
+
 
 2. Setup for single host
 ------------------------
