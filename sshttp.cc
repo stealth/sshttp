@@ -30,6 +30,10 @@
  * SUCH DAMAGE.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <unistd.h>
 #include <fcntl.h>
 #include <assert.h>
@@ -144,6 +148,11 @@ void sshttp::cleanup(int fd)
 		i->second->fd = -1;
 		i->second->peer_fd = -1;
 		i->second->blen = 0;
+
+		i->second->plen = 0;
+		close(i->second->p[0]);
+		close(i->second->p[1]);
+		i->second->p[0] = i->second->p[1] = -1;
 	}
 	if (max_fd == fd)
 		--max_fd;
@@ -166,6 +175,7 @@ void sshttp::shutdown(int fd)
 
 	fd2state[fd]->state = STATE_CLOSING;
 	fd2state[fd]->blen = 0;
+	fd2state[fd]->plen = 0;
 
 	pfds[fd].fd = -1;
 	pfds[fd].events = pfds[fd].revents = 0;
@@ -311,6 +321,7 @@ int sshttp::loop()
 {
 	int i = 0, afd = -1, peer_fd = -1;
 	ssize_t n = 0, wn = 0;
+	loff_t off1 = 0, off2 = 0;
 	sockaddr_in sin4, dst4;
 	sockaddr_in6 sin6, dst6;
 	sockaddr *sin = (sockaddr *)&sin4, *dst = (sockaddr *)&dst4, *from = NULL;
@@ -372,9 +383,15 @@ int sshttp::loop()
 			if ((pfds[i].revents & (POLLERR|POLLHUP|POLLNVAL)) != 0) {
 
 				// flush buffer to peer if there is pending data
-				if (fd2state[i]->blen > 0 && fd2state[i]->state == STATE_CONNECTED) {
-					writen(fd2state[i]->peer_fd, fd2state[i]->buf, fd2state[i]->blen);
+				if (fd2state[i]->state == STATE_CONNECTED) {
+					if (fd2state[i]->blen > 0)
+						writen(fd2state[i]->peer_fd, fd2state[i]->buf, fd2state[i]->blen);
+					if (fd2state[i]->plen > 0) {
+						off1 = off2 = 0;
+						splice(fd2state[i]->p[0], &off1, fd2state[i]->peer_fd, &off2, fd2state[i]->plen, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
+					}
 					fd2state[i]->blen = 0;
+					fd2state[i]->plen = 0;
 				}
 
 				// hangup/error for i, but let kernel flush internal send buffers
@@ -549,8 +566,10 @@ int sshttp::loop()
 
 				if (pfds[i].revents & POLLOUT) {
 					// actually data to send?
-					if ((n = fd2state[fd2state[i]->peer_fd]->blen) > 0) {
-						wn = writen(i, fd2state[fd2state[i]->peer_fd]->buf, n);
+					if ((n = fd2state[fd2state[i]->peer_fd]->plen) > 0) {
+						off1 = off2 = 0;
+						wn = splice(fd2state[fd2state[i]->peer_fd]->p[0], &off1, i, &off2, n, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
+						//wn = writen(i, fd2state[fd2state[i]->peer_fd]->buf, n);
 
 						// error for i, but let kernel flush internal sendbuffer
 						// for peer (wn > n shouldnt really happen)
@@ -561,9 +580,6 @@ int sshttp::loop()
 						}
 						// non blocking write couldnt write it all at once
 						if (wn < n) {
-							memmove(fd2state[fd2state[i]->peer_fd]->buf,
-							        fd2state[fd2state[i]->peer_fd]->buf + wn,
-							         n - wn);
 							// more pending data to send here, no need for new peer in data
 							pfds[i].events |= POLLOUT;
 							pfds[fd2state[i]->peer_fd].events &= ~POLLIN;
@@ -573,7 +589,7 @@ int sshttp::loop()
 							// from peer
 							pfds[fd2state[i]->peer_fd].events |= POLLIN;
 						}
-						fd2state[fd2state[i]->peer_fd]->blen -= wn;
+						fd2state[fd2state[i]->peer_fd]->plen -= wn;
 					} else {
 						// no data to send, so take away from output poll for now
 						// and ask for data to read via peer
@@ -583,14 +599,16 @@ int sshttp::loop()
 				}
 
 				if (pfds[i].revents & POLLIN) {
-					// still data in buffer? dont read() new data
-					if (fd2state[i]->blen > 0) {
+					// still data in buffer? dont splice in new data
+					if (fd2state[i]->plen > 0) {
 						pfds[i].events &= ~POLLIN;
 						pfds[fd2state[i]->peer_fd].events |= POLLOUT;
 						pfds[i].revents = 0;
 						continue;
 					}
-					n = read(i, fd2state[i]->buf, sizeof(fd2state[i]->buf));
+					off1 = off2 = 0;
+					n = splice(i, &off1, fd2state[i]->p[1], &off2, SPLICE_SIZE, SPLICE_F_MOVE|SPLICE_F_NONBLOCK);
+					//n = read(i, fd2state[i]->buf, sizeof(fd2state[i]->buf));
 
 					// No need to writen() pending data on read error here, as above blen check
 					// ensured no pending data can happen here

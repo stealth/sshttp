@@ -116,19 +116,29 @@ enum {
 };
 
 
+enum {
+	SPLICE_SIZE = 4096
+};
+
+
 struct status {
 	int fd, peer_fd;
+	int p[2];
 	status_t state;
 	time_t last_t;
 	char buf[1024];
 	uint16_t blen;
+	uint16_t plen;
 	struct sockaddr_in from4;
 	struct sockaddr_in6 from6;
 
 	status()
 	 : fd(-1), peer_fd(-1), state(STATE_NONE)
 	{
-		memset(buf, 0, sizeof(buf)); blen = 0;
+		memset(buf, 0, sizeof(buf));
+		blen = 0;
+		p[0] = p[1] = -1;
+		plen = 0;
 	}
 };
 
