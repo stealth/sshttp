@@ -509,6 +509,12 @@ int sshttp::loop()
 				fd2state[i]->peer_fd = peer_fd;
 				fd2state[i]->state = STATE_CONNECTED;
 				fd2state[i]->last_t = now;
+				if (pipe2(fd2state[i]->p, O_NONBLOCK) < 0) {
+					err = "sshttp::loop: pipe: ";
+					err += strerror(errno);
+					cleanup(i);
+					return -1;
+				}
 
 				if (fd2state.count(peer_fd) == 0) {
 					fd2state[peer_fd] = new (nothrow) status;
@@ -524,6 +530,13 @@ int sshttp::loop()
 				fd2state[peer_fd]->peer_fd = i;
 				fd2state[peer_fd]->state = STATE_CONNECTING;
 				fd2state[peer_fd]->last_t = now;
+				if (pipe2(fd2state[peer_fd]->p, O_NONBLOCK) < 0) {
+					err = "sshttp::loop: pipe: ";
+					err += strerror(errno);
+					cleanup(i);
+					cleanup(peer_fd);
+					return -1;
+				}
 
 				pfds[peer_fd].fd = peer_fd;
 				// POLLIN|POLLOUT b/c we wait for connection to finish
