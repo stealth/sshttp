@@ -539,7 +539,7 @@ int sshttp::loop()
 				pfds[fd2state[i]->peer_fd].events = POLLIN;
 
 			} else if (fd2state[i]->state == STATE_CONNECTED) {
-				// peer not ready yet (should not happen)
+				// peer not ready yet (may only happen in smtp case)
 				if (fd2state.count(fd2state[i]->peer_fd) == 0 ||
 				    !fd2state[fd2state[i]->peer_fd] ||
 				    fd2state[fd2state[i]->peer_fd]->state != STATE_CONNECTED) {
