@@ -1,6 +1,6 @@
 # sshttp Makefile
 
-CFLAGS=-c -O2 -Wall -ansi -pedantic
+CFLAGS=-c -O2 -Wall -std=c++11 -pedantic
 
 # On BSD systems you either use gmake or you delete
 # the ifeq's and the Linux def part.
