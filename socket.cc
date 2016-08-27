@@ -44,6 +44,16 @@
 #include "socket.h"
 #include "config.h"
 
+#if defined(LINUX24) || defined(LINUX26)
+
+#include <linux/netfilter_ipv4.h>
+#include <linux/netfilter_ipv6.h>
+
+#ifndef IP6T_SO_ORIGINAL_DST
+#define IP6T_SO_ORIGINAL_DST 80
+#endif
+
+#endif
 
 namespace NS_Socket {
 
@@ -128,7 +138,6 @@ int dstaddr(int sock, sockaddr *dst, socklen_t dlen)
 		return -1;
 	}
 #elif defined(LINUX24) || defined(LINUX26)
-#include <linux/netfilter_ipv4.h>
 	if (dlen == sizeof(sockaddr_in)) {
 		if (getsockopt(sock, SOL_IP, SO_ORIGINAL_DST, dst, &dlen) < 0) {
 			error = "NS_Socket::dstaddr::getsockopt:";
@@ -136,10 +145,6 @@ int dstaddr(int sock, sockaddr *dst, socklen_t dlen)
 			return -1;
 		}
 	} else {
-#include <linux/netfilter_ipv6.h>
-#ifndef IP6T_SO_ORIGINAL_DST
-#define IP6T_SO_ORIGINAL_DST 80
-#endif
 		if (getsockopt(sock, SOL_IPV6, IP6T_SO_ORIGINAL_DST, dst, &dlen) < 0) {
 			error = "NS_Socket::dstaddr::getsockopt:";
 			error += strerror(errno);
