@@ -111,7 +111,7 @@ int sshttp::init(int f, const string &laddr, const string &lport, bool tproxy)
 
 		if (setrlimit(RLIMIT_NOFILE, &rl) < 0) {
 			err = "sshttp::init::setrlimit:";
-			err = strerror(errno);
+			err += strerror(errno);
 			return -1;
 		}
 	}
