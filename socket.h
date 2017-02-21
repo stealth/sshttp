@@ -29,8 +29,8 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-#ifndef _MY_SOCKET_H_
-#define _MY_SOCKET_H_
+#ifndef sshttp_socket_h
+#define sshttp_socket_h
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -60,5 +60,5 @@ int writen(int fd, const void *buf, size_t len);
 
 } // namespace
 
-#endif // _MY_SOCKET_H_
+#endif
 

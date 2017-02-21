@@ -1,5 +1,5 @@
-#ifndef __config_h__
-#define __config_h__
+#ifndef sshttp_config_h
+#define sshttp_config_h
 
 #include <stdint.h>
 
