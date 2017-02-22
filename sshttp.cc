@@ -89,6 +89,11 @@ int sshttp::init(int f, const string &laddr, const string &lport, bool tproxy)
 		}
 	}
 
+	if (af == AF_INET6) {
+		int one = 1;
+		setsockopt(sock_fd, SOL_IPV6, IPV6_V6ONLY, &one, sizeof(one));
+	}
+
 	if (bind_local(sock_fd, ai->ai_addr, ai->ai_addrlen, 1) < 0) {
 		err = NS_Socket::why();
 		return -1;
