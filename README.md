@@ -1,7 +1,11 @@
 sshttp - hiding SSH servers behind HTTP
 =======================================
 
+![sshttp](https://github.com/stealth/sshttp/blob/master/sshttp.jpg)
+
+
 [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=9MVF8BRMX2CWA)
+
 
 0. Intro
 --------
@@ -15,6 +19,8 @@ _sshttpd_ can multiplex the following protocol pairs:
 * SSH/HTTP
 * SSH/HTTPS
 * SSH/SMTP (without SMTP multiline banners)
+* HTTPS SNI multiplexing
+* SSH/HTTPS with SNI multiplexing
 
 
 1. Build
@@ -71,8 +77,20 @@ all of your __HTTP/SSH__ traffic to your internal LAN. To do so, run _sshttpd_ w
 `-T` and use `nf-tproxy` rather than `nf-setup`. Before you do so, carefully
 read `nf-tproxy` so you dont lock yourself out of the network.
 
+4. SNI Mux
+----------
 
-4. Misc
+With _sshttpd_ you can also mux based on the HTTPS SNI. Just set up your
+`nf-setup` to contain the SNI ports (there are already samples) and invoke
+_sshttpd_ with `-N name:port` e.g. `sshttpd -S 22 -H 4433 -L 443 -N drops.v2:7350`
+to hide a sshd on 22 and a [drops setup](https://github.com/stealth/drops) on port 7350 behind port 443, and at the same time serving
+your webserver from port 4433 to be visible to outside on port 443.
+This works because _drops_ sets the SNI of `drops.v2` in outgoing connects.
+Multiple `-N` switches are allowed so you could mux a lot of services
+via SNI. The ports/services must run all on the same machine where the original request
+was destinated to. If you just want to mux based on SNI, you can set the SSH port to 0 via `-S 0`.
+
+5. Misc
 -------
 
 You dont need to patch any of your ssh/web/smtp client or server software. It
