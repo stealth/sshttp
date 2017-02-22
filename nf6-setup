@@ -8,8 +8,19 @@
 # '-L 25 -H 2525'
 
 DEV=eth0
-SSH_PORT=22
-HTTP_PORT=8080
+
+# The ports you want to mux:
+# -S <port> -H <port> and any other -N SNI:<ports> (in case of HTTPS)
+# do NOT add the -L port here
+# standard SSH / HTTP mux looks like this (sshttpd -S 22 -H 8080 -L 80)
+PORTS="22 8080"
+
+# a SSH / HTTPS mux with https server on port 4433 and a drops
+# on port 7350 looks like this (sshttpd -S 22 -H 4433 -L 443 -N drops.v2:7350)
+#PORTS="22 4433 7350"
+
+# SNI-only mux without SSH (sshttpd -S 0 -H 4433 -L 443 -N drops.v2:7350)
+#PORTS="4433 7350"
 
 #if it clashes with complex NATing rules, try this
 #ip6tables -t mangle -F
@@ -17,14 +28,19 @@ HTTP_PORT=8080
 #ip6tables -t raw -F
 
 modprobe nf_conntrack_ipv6 || true
-
-# block HTTP/SSH direct access
-ip6tables -A INPUT -i $DEV -p tcp --dport $SSH_PORT -j DROP
-ip6tables -A INPUT -i $DEV -p tcp --dport $HTTP_PORT -j DROP
-
 ip6tables -t mangle -N DIVERT || true
-ip6tables -t mangle -A OUTPUT -p tcp -o $DEV --sport $SSH_PORT -j DIVERT
-ip6tables -t mangle -A OUTPUT -p tcp -o $DEV --sport $HTTP_PORT -j DIVERT
+
+for p in $PORTS; do
+	echo "Setting up port $p ..."
+
+	# block HTTP/SSH direct access from outside
+	ip6tables -A INPUT -i $DEV -p tcp --dport $p -j DROP
+
+	# and divert anything back to sshttpd that comes from the muxed services
+	# so sshttpd can see it
+	ip6tables -t mangle -A OUTPUT -p tcp -o $DEV --sport $p -j DIVERT
+done
+
 ip6tables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
 
 ip6tables -t mangle -A DIVERT -j MARK --set-mark 1

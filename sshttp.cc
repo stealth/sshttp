@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2016 Sebastian Krahmer.
+ * Copyright (C) 2010-2017 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -657,7 +657,7 @@ int sshttp::loop()
 uint16_t sshttp::find_port(int fd)
 {
 	int r = 0;
-	char buf[1024];
+	unsigned char buf[2048 + 1] = {0};
 
 	r = recv(fd, buf, sizeof(buf) - 1, MSG_PEEK);
 
@@ -667,10 +667,114 @@ uint16_t sshttp::find_port(int fd)
 	else if (r < 0)
 		return d_ssh_port;
 
-	if (strncmp(buf, "SSH-", 4) == 0)
+	if (memcmp(buf, "SSH-", 4) == 0)
 		return d_ssh_port;
 
-	// no string match? https! (covered by HTTP_PORT)
+	// SNI lookup table configured? Must be https
+	if (sni2port.size() > 0) {
+		uint16_t p = https_to_port(buf, r);
+		if (p > 0)
+			return p;
+
+		// In case we found a parsing error of the ClientHello or miss the SNI, pass it
+		// to the original https port
+	}
+
+	// no string match? http(s)! (https covered by HTTP_PORT)
 	return d_http_port;
+}
+
+
+// also returns 0 on error or if no SNI is found
+// See rfc5246 and rfc6066 for the TLS ClientHello format
+// Find the SNI TLS extension inside Client Hello and return the port
+// that was assigned for it in the sni2port map
+uint16_t sshttp::https_to_port(const unsigned char *chello, int bsize)
+{
+	const unsigned char *ptr = chello, *end = chello + bsize;
+
+	// TLS record
+	if (end - ptr <= 5)
+		return 0;
+	ptr += 5;
+
+	// ClientHello?
+	if (*ptr != 1)
+		return 0;
+	++ptr;
+
+	if (end - ptr <= 5 + 32 + 1)	// record + Random + session_id len
+		return 0;
+	ptr += 5 + 32;
+
+	uint8_t sessid_len = *ptr;
+	++ptr;
+	if (end - ptr <= sessid_len)
+		return 0;
+	ptr += sessid_len;
+
+	if (end - ptr <= 2)	// cipher suite len
+		return 0;
+	uint16_t clen = ntohs(*(uint16_t *)ptr);
+	ptr += 2;
+	if (end - ptr <= clen)
+		return 0;
+	ptr += clen;
+
+	if (end - ptr <= 1)	// compression len
+		return 0;
+	clen = *ptr;
+	++ptr;
+	if (end - ptr <= clen)
+		return 0;
+	ptr += clen;
+
+	if (end - ptr <= 2)	// Extensions len (sum of all Ex.)
+		return 0;
+	// skip Extensions len and iterate over each extension until we find SNI
+	ptr += 2;
+
+	for (; ptr < end;) {
+		if (end - ptr <= 2)	// Ex. Type
+			break;
+		uint16_t etype = ntohs(*(uint16_t *)ptr);
+		ptr += 2;
+		if (end - ptr <= 2)	// Ex. Len
+			break;
+		clen = ntohs(*(uint16_t *)ptr);
+		ptr += 2;
+		if (end - ptr <= clen)
+			break;
+		// servername Ex. found? Go deeper to parse SNI Ex. (what a stupid protocol)
+		// Theoretically there could be a lot of Server Name Types and list of hosts, but
+		// we only allow "hostname" type and just one of them
+		if (etype == 0) {
+			if (end - ptr <= 2)
+				break;
+			clen = ntohs(*(uint16_t *)ptr);	// Server Name List len
+			ptr += 2;
+			if (end - ptr <= clen || end - ptr <= 1)	// 1 for Server Name Type
+				break;
+			if (*ptr != 0)		// Server Name Type 0 -> Host Name
+				break;
+			++ptr;
+			if (end - ptr <= 2)
+				break;
+			clen = ntohs(*(uint16_t *)ptr);	// hostname len
+			ptr += 2;
+			if (end - ptr < clen)
+				break;
+			string hostname = string(reinterpret_cast<const char *>(ptr), clen);
+			if (sni2port.count(hostname) > 0)
+				return sni2port[hostname];
+
+			break;
+
+		}
+		ptr += clen;
+	}
+
+
+	return 0;
 }
 

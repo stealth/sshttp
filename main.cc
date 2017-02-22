@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2016 Sebastian Krahmer.
+ * Copyright (C) 2010-2017 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -94,8 +94,13 @@ int main(int argc, char **argv)
 {
 	int c;
 	int family = AF_INET;
+	map<string, uint16_t> sni2port;
+	uint16_t sni_port = 0;
+	string sni = "";
+	string::size_type idx = 0;
 
-	while ((c = getopt(argc, argv, "S:H:L:R:U:n:6l:iT")) != -1) {
+
+	while ((c = getopt(argc, argv, "S:H:L:R:U:n:6l:N:iT")) != -1) {
 		switch (c) {
 		case 'T':
 			Config::tproxy = 1;
@@ -127,8 +132,18 @@ int main(int argc, char **argv)
 			if (Config::laddr == "0.0.0.0")
 				Config::laddr = "::";
 			break;
+		case 'N':
+			sni = optarg;
+			idx = sni.find(":");
+			if (idx == string::npos || idx + 1 >= sni.size())
+				break;
+			sni_port = (uint16_t)strtoul(sni.c_str() + idx + 1, NULL, 10);
+			if (sni_port <= 0)
+				break;
+			sni2port[sni.substr(0, idx)] = sni_port;
+			break;
 		default:
-			printf("sshttpd [-n CPU cores] [-S ssh port] [-H http port] [-L lport] [-l laddr] [-6] ");
+			printf("sshttpd [-n CPU cores] [-S ssh port] [-H http port] [-L lport] [-l laddr] [-6] [-N SNI:port] ");
 #ifdef USE_CAPS
 			printf("[-U user] [-R chroot]");
 #endif
@@ -154,6 +169,9 @@ int main(int argc, char **argv)
 		fprintf(stderr, "%s\n", sh.why());
 		exit(errno);
 	}
+
+	for (auto i = sni2port.begin(); i != sni2port.end(); ++i)
+		sh.add_sni(i->first, i->second);
 
 	NS_Misc::init_multicore();
 	NS_Misc::setup_multicore(Config::cores);

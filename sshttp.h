@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2016 Sebastian Krahmer.
+ * Copyright (C) 2010-2017 Sebastian Krahmer.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef __sshttp_h__
-#define __sshttp_h__
+#ifndef sshttp_sshttp_h
+#define sshttp_sshttp_h
 
 #include <stdio.h>
 #include <poll.h>
@@ -61,6 +61,8 @@ private:
 
 	std::map<int, struct status *> fd2state;
 
+	std::map<std::string, uint16_t> sni2port;
+
 	void cleanup(int);
 
 	void shutdown(int);
@@ -68,6 +70,8 @@ private:
 	void calc_max_fd();
 
 	uint16_t find_port(int);
+
+	uint16_t https_to_port(const unsigned char *, int);
 
 public:
 	sshttp() : pfds(NULL), d_ssh_port(22), d_http_port(8080), d_local_port(80), now(0),
@@ -90,6 +94,11 @@ public:
 	int smtp_transition(int);
 
 	int loop();
+
+	void add_sni(const std::string &s, uint16_t p)
+	{
+		sni2port[s] = p;
+	}
 
 	const char *why();
 };
