@@ -29,7 +29,9 @@ _sshttpd_ can multiplex the following protocol pairs:
 Be sure you run recent Linux kernel and install `nf-conntrack` as well
 as `libcap` and `libcap-devel` if you want to use the capability feature.
 
-    $ make
+```
+$ make
+```
 
 There is a new `splice` branch inside the git. `git checkout splice`
 before `make`, if you want to test this new branch. It implements
@@ -42,18 +44,33 @@ at the "extra cost" of two additional pipe descriptors per connection.
 2. Setup for single host
 ------------------------
 
+This paragraph describes the setup where all services run on the same host
+as _sshttpd_ itself. The muxing happens to the same IP/IP6 address that
+the outside connects arrive to, so basically just the ports are changing per
+detected service.
+
 _sshttpd_ is an easy to use OSI-Layer5 switching daemon. It runs
-transparently on __HTTP__ port (`-L` switch, default 80) and decides
-on incoming connections whether this is __SSH__ or __HTTP__ traffic.
-If its __HTTP__ traffic it switches the traffic to the `HTTP_PORT`
+transparently on __HTTP(S)__ port (`-L` switch, default 80) and decides
+on incoming connections whether this is __SSH__ or __HTTP(S)__ traffic.
+If its __HTTP(S)__ traffic, it switches the traffic to the `HTTP_PORT`
 (`-H`, default 8080) and if its __SSH__ traffic to `SSH_PORT` (`-S`, default
 22) respectively.
 
-You might need to edit `nf-setup` script to match your ports (`22`, `80` and `8080`
-are just fine) and run it to install the proxy rules.
+You need to edit `nf-setup` script to match your network device and `$PORTS` (`22` and `8080`
+are just fine for the SSH/HTTP case) and run it to install the proxy rules.
 Your _sshd_ has to run on `$SSH_PORT` and your webserver on `$HTTP_PORT`.
 Thats basically it. Go ahead and run _sshttpd_ (as root) and it will layer5-switch
-your traffic destinated to TCP port 80.
+your traffic destinated to TCP port 80:
+
+```
+# ./nf-setup
+Using network device eth0
+Setting up port 22 ...
+Setting up port 8080 ...
+# ./sshttpd -S 22 -L 80 -H 8080 -U nobody -R /var/empty
+sshttpd: Using HTTP_PORT=8080 SSH_PORT=22 and local port=80. Going background. Using caps/chroot.
+#
+```
 
 If you want to mux __SMTP__ with _sshttpd_, just give `25` as `-L` parameter, `2525`
 as `-H` parameter, and setup your smtp daemon to listen on 2525. Then
@@ -66,16 +83,14 @@ When muxing IPv6 connections, the setup is basically the same; just use the `nf6
 script and invoke _sshttpd_ with `-6`.
 
 
-Do not forget to `modprobe nf_conntrack_ipv4` or `modprobe nf_conntrack_ipv6`.
-
-
 3. Transparent proxy setup
 --------------------------
 
 You can run _sshttpd_ also on your gateway machine and transparently proxy/mux
-all of your __HTTP/SSH__ traffic to your internal LAN. To do so, run _sshttpd_ with
-`-T` and use `nf-tproxy` rather than `nf-setup`. Before you do so, carefully
-read `nf-tproxy` so you dont lock yourself out of the network.
+all of your __HTTP(S)/SSH__ traffic to your internal LAN. To do so, run _sshttpd_ with
+`-T` and use `nf-tproxy` rather than `nf-setup` as a template for your FW setup.
+Carefully read `nf-tproxy` so you dont lock yourself out of the network and all
+the network devices and IP addresses match your setup.
 
 4. SNI Mux
 ----------
@@ -99,7 +114,7 @@ It would work without, but by using `IP_TRANSPARENT` it is possible to even
 have unmodified syslogs, e.g. the original source IP/port of incoming connections
 is passed as-is to the SSH/HTTP/SMTP servers.
 
-Make sure the `nf_conntrack` and `nf_conntrack_ipv4` modules are loaded.
+Make sure the `nf_conntrack` and `nf_conntrack_ipv4` or `nf_conntrack_ipv6` modules are loaded.
 _sshttpd_ is also a tricky anti-SSH0day (if ever:) and anti SSH-scanning/bruteforcing
 measurement.
 _sshttpd_ has small footprint and was optimized for speed so it also runs
@@ -120,5 +135,14 @@ run two sshttpd's to reach that goal: one on `LOCAL_PORT 80` and one on
 `LOCAL_PORT 443`.
 
 
-Hints/bug reports beyond RTFM to sebastian.krahmer [at] gmail com.
+6. Alternative docu
+-------------------
+
+As per 2017 it seems you have to provide alternative facts for everything,
+so here are some good writeups from other people for better understanding or in case my
+description was too brief:
+
+* [by stalkr](http://blog.stalkr.net/2012/02/sshhttps-multiplexing-with-sshttp.html)
+* [by Will Rouesnel](http://blog.wrouesnel.com/articles/Setting%20up%20sshttp/)
+* [by Yves](http://yalis.fr/cms/index.php/post/2014/02/22/Multiplex-SSH-and-HTTPS-on-a-single-port)
 

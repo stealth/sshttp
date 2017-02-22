@@ -656,7 +656,7 @@ uint16_t sshttp::find_port(int fd)
 }
 
 
-// also returns 0 on error
+// also returns 0 on error or if no SNI is found
 // See rfc5246 and rfc6066 for the TLS ClientHello format
 // Find the SNI TLS extension inside Client Hello and return the port
 // that was assigned for it in the sni2port map
