@@ -30,6 +30,8 @@ PORTS="22 8080"
 modprobe nf_conntrack_ipv4 || true
 iptables -t mangle -N DIVERT || true
 
+echo "Using network device $DEV"
+
 for p in $PORTS; do
 	echo "Setting up port $p ..."
 
