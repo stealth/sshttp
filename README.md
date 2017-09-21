@@ -62,6 +62,8 @@ Your _sshd_ has to run on `$SSH_PORT` and your webserver on `$HTTP_PORT`.
 Thats basically it. Go ahead and run _sshttpd_ (as root) and it will layer5-switch
 your traffic destinated to TCP port 80:
 
+**_Take care when running nf-setup on a remote host in an SSH session - it will firewall port 22_**
+
 ```
 # ./nf-setup
 Using network device eth0
