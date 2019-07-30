@@ -7,8 +7,7 @@ sshttp - hiding SSH servers behind HTTP
 [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=9MVF8BRMX2CWA)
 
 
-0. Intro
---------
+## 0. Intro
 
 In case your FW policy forbids __SSH__ access to the DMZ or internal
 network from outside, but you still want to use ssh on machines
@@ -23,8 +22,7 @@ _sshttpd_ can multiplex the following protocol pairs:
 * SSH/HTTPS with SNI multiplexing
 
 
-1. Build
----------
+## 1. Build
 
 Be sure you run recent Linux kernel and install `nf-conntrack` as well
 as `libcap` and `libcap-devel` if you want to use the capability feature.
@@ -41,8 +39,7 @@ land back and forth (__read()/write()__), which could also just be spliced kerne
 at the "extra cost" of two additional pipe descriptors per connection.
 
 
-2. Setup for single host
-------------------------
+## 2. Setup for single host
 
 This paragraph describes the setup where all services run on the same host
 as _sshttpd_ itself. The muxing happens to the same IP/IP6 address that
@@ -85,17 +82,15 @@ When muxing IPv6 connections, the setup is basically the same; just use the `nf6
 script and invoke _sshttpd_ with `-6`.
 
 
-3. Transparent proxy setup
---------------------------
+## 3. Transparent proxy setup
 
 You can run _sshttpd_ also on your gateway machine and transparently proxy/mux
 all of your __HTTP(S)/SSH__ traffic to your internal LAN. To do so, run _sshttpd_ with
 `-T` and use `nf-tproxy` rather than `nf-setup` as a template for your FW setup.
-Carefully read `nf-tproxy` so you dont lock yourself out of the network and all
+Carefully read `nf-tproxy` so you don't lock yourself out of the network and all
 the network devices and IP addresses match your setup.
 
-4. SNI Mux
-----------
+## 4. SNI Mux
 
 With _sshttpd_ you can also mux based on the HTTPS SNI. Just set up your
 `nf-setup` to contain the SNI ports (there are already samples) and invoke
@@ -107,10 +102,9 @@ Multiple `-N` switches are allowed so you could mux a lot of services
 via SNI. The ports/services must run all on the same machine where the original request
 was destinated to. If you just want to mux based on SNI, you can set the SSH port to 0 via `-S 0`.
 
-5. Misc
--------
+## 5. Misc
 
-You dont need to patch any of your ssh/web/smtp client or server software. It
+You don't need to patch any of your ssh/web/smtp client or server software. It
 works as is. _sshttpd_ runs only on Linux and needs `IP_TRANSPARENT` support.
 It would work without, but by using `IP_TRANSPARENT` it is possible to even
 have unmodified syslogs, e.g. the original source IP/port of incoming connections
@@ -137,8 +131,7 @@ run two sshttpd's to reach that goal: one on `LOCAL_PORT 80` and one on
 `LOCAL_PORT 443`.
 
 
-6. Alternative docu
--------------------
+## 6. Alternative docu
 
 As per 2017 it seems you have to provide alternative facts for everything,
 so here are some good writeups from other people for better understanding or in case my
