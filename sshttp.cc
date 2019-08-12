@@ -690,6 +690,15 @@ uint16_t sshttp::find_port(int fd)
 }
 
 
+// unaligned int ptr access
+uint16_t ua_uint16_ntohs(const void *vp)
+{
+	uint16_t x = 0;
+	memcpy(&x, vp, sizeof(x));
+	return ntohs(x);
+}
+
+
 // also returns 0 on error or if no SNI is found
 // See rfc5246 and rfc6066 for the TLS ClientHello format
 // Find the SNI TLS extension inside Client Hello and return the port
@@ -720,7 +729,7 @@ uint16_t sshttp::https_to_port(const unsigned char *chello, int bsize)
 
 	if (end - ptr <= 2)	// cipher suite len
 		return 0;
-	uint16_t clen = ntohs(*(uint16_t *)ptr);
+	uint16_t clen = ua_uint16_ntohs(ptr);
 	ptr += 2;
 	if (end - ptr <= clen)
 		return 0;
@@ -742,11 +751,11 @@ uint16_t sshttp::https_to_port(const unsigned char *chello, int bsize)
 	for (; ptr < end;) {
 		if (end - ptr <= 2)	// Ex. Type
 			break;
-		uint16_t etype = ntohs(*(uint16_t *)ptr);
+		uint16_t etype = ua_uint16_ntohs(ptr);
 		ptr += 2;
 		if (end - ptr <= 2)	// Ex. Len
 			break;
-		clen = ntohs(*(uint16_t *)ptr);
+		clen = ua_uint16_ntohs(ptr);
 		ptr += 2;
 		if (end - ptr <= clen)
 			break;
@@ -756,7 +765,7 @@ uint16_t sshttp::https_to_port(const unsigned char *chello, int bsize)
 		if (etype == 0) {
 			if (end - ptr <= 2)
 				break;
-			clen = ntohs(*(uint16_t *)ptr);	// Server Name List len
+			clen = ua_uint16_ntohs(ptr);	// Server Name List len
 			ptr += 2;
 			if (end - ptr <= clen || end - ptr <= 1)	// 1 for Server Name Type
 				break;
@@ -765,7 +774,7 @@ uint16_t sshttp::https_to_port(const unsigned char *chello, int bsize)
 			++ptr;
 			if (end - ptr <= 2)
 				break;
-			clen = ntohs(*(uint16_t *)ptr);	// hostname len
+			clen = ua_uint16_ntohs(ptr);	// hostname len
 			ptr += 2;
 			if (end - ptr < clen)
 				break;
