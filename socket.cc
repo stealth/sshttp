@@ -242,7 +242,7 @@ int tcp_connect_nb(const struct sockaddr *to, socklen_t tolen, const struct sock
 int finish_connecting(int fd)
 {
 	int e = 0;
-	socklen_t len = sizeof(error);
+	socklen_t len = sizeof(e);
 	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &e, &len) < 0 || e < 0) {
 		error = "NS_Socket::finish_connecting::getsockopt:";
 		error += strerror(errno);
