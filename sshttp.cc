@@ -334,7 +334,7 @@ int sshttp::loop()
 	sockaddr_in sin4, dst4;
 	sockaddr_in6 sin6, dst6;
 	sockaddr *sin = (sockaddr *)&sin4, *dst = (sockaddr *)&dst4, *from = NULL;
-	socklen_t slen = sizeof(sin);
+	socklen_t slen = sizeof(sin4);
 
 	if (af == AF_INET6) {
 		slen = sizeof(sin6);
