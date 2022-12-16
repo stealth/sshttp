@@ -1,11 +1,9 @@
 sshttp - hiding SSH servers behind HTTP
 =======================================
 
-![sshttp](https://github.com/stealth/sshttp/blob/master/sshttp.jpg)
-
-
-[![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=9MVF8BRMX2CWA)
-
+<p align="center">
+<img src="https://github.com/stealth/sshttp/blob/master/sshttp.jpg" />
+</p>
 
 ## 0. Intro
 
@@ -38,6 +36,12 @@ benefit since it avoids copying the network data between user and kernel
 land back and forth (__read()/write()__), which could also just be spliced kernel-internally
 at the "extra cost" of two additional pipe descriptors per connection.
 
+*proudly sponsored by:*
+<p align="center">
+<a href="https://github.com/c-skills/welcome">
+<img src="https://github.com/c-skills/welcome/blob/master/logo.jpg"/>
+</a>
+</p>
 
 ## 2. Setup for single host
 
