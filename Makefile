@@ -1,6 +1,8 @@
 # sshttp Makefile
 
-CFLAGS=-c -O2 -Wall -std=c++11 -pedantic
+CXX?=c++
+CXXSTD?=c++11
+CXXFLAGS=-c -O2 -Wall -std=$(CXXSTD) -pedantic
 
 # On BSD systems you either use gmake or you delete
 # the ifeq's and the Linux def part.
@@ -16,15 +18,14 @@ SSH_BANNER=-DSSH_BANNER=\"SSH-2.0-OpenSSH_5.8\"
 
 
 ifeq ($(shell uname -o), GNU/Linux)
-CFLAGS+=-DUSE_CAPS
-CFLAGS+=-DLINUX26
+CXXFLAGS+=-DUSE_CAPS
+CXXFLAGS+=-DLINUX26
 LIBS=-lcap
 else
-CFLAGS+=-DFREEBSD
+CXXFLAGS+=-DFREEBSD
 LIBS=
 endif
 
-CXX=c++
 LD=ld
 
 all: socket.o main.o sshttp.o multicore.o
@@ -35,14 +36,14 @@ clean:
 
 
 multicore.o: multicore.cc multicore.h
-	$(CXX) $(CFLAGS) multicore.cc
+	$(CXX) $(CXXFLAGS) multicore.cc
 
 sshttp.o: sshttp.cc sshttp.h
-	$(CXX) $(CFLAGS) $(SMTP_DOMAIN) $(SSH_BANNER) sshttp.cc
+	$(CXX) $(CXXFLAGS) $(SMTP_DOMAIN) $(SSH_BANNER) sshttp.cc
 
 main.o: main.cc
-	$(CXX) $(CFLAGS) main.cc
+	$(CXX) $(CXXFLAGS) main.cc
 
 socket.o: socket.cc socket.h
-	$(CXX) $(CFLAGS) socket.cc
+	$(CXX) $(CXXFLAGS) socket.cc
 
