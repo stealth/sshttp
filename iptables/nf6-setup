@@ -28,6 +28,9 @@ PORTS="22 8080"
 #ip6tables -t raw -F
 
 modprobe nf_conntrack_ipv6 || true
+modprobe nf_conntrack || true
+modprobe xt_conntrack || true
+
 ip6tables -t mangle -N DIVERT || true
 
 echo "Using network device $DEV"
@@ -50,4 +53,7 @@ ip6tables -t mangle -A DIVERT -j ACCEPT
 
 ip -6 rule add fwmark 1 lookup 123 || true
 ip -6 route add local ::/0 dev lo table 123
+
+# this is necessary on some kernels to make conntrack actually work, huh?
+ip6tables -A INPUT -m conntrack -i lo --ctstate NEW -j LOG
 

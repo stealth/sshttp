@@ -24,7 +24,9 @@ _sshttpd_ can multiplex the following protocol pairs:
 
 Be sure you run recent Linux kernel and install `nf-conntrack` as well
 as `libcap` and `libcap-devel` if you want to use the capability feature.
+On older systems the nf-conntrack module is named nf-conntrack-ipv4.
 
+Inside `src` dir:
 ```
 $ make
 ```
@@ -57,7 +59,11 @@ If its __HTTP(S)__ traffic, it switches the traffic to the `HTTP_PORT`
 (`-H`, default 8080) and if its __SSH__ traffic to `SSH_PORT` (`-S`, default
 22) respectively.
 
-You need to edit `nf-setup` script to match your network device and `$PORTS` (`22` and `8080`
+After the build it is time to pick the right netfilter script for setting up the fw rules.
+In `iptables` directory you will find the old style *iptables* version and in `nft`
+the new version for *nft* (but currently only using the compat layer).
+
+You need to edit `nf-setup` script (`nf6-setup`if using IPv6) to match your network device and `$PORTS` (`22` and `8080`
 are just fine for the SSH/HTTP case) and run it to install the proxy rules.
 Your _sshd_ has to run on `$SSH_PORT` and your webserver on `$HTTP_PORT`.
 Thats basically it. Go ahead and run _sshttpd_ (as root) and it will layer5-switch

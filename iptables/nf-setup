@@ -1,0 +1,59 @@
+#!/bin/sh
+
+# sshttp netfilter rules
+#
+
+# If you mux SSH/SMTP (rather than HTTP), then HTTP_PORT is your
+# alternate SMTP port. e.g. 2525 and sshttp needs to be started with
+# '-L 25 -H 2525'
+
+DEV=eth0
+
+# The ports you want to mux:
+# -S <port> -H <port> and any other -N SNI:<ports> (in case of HTTPS)
+# do NOT add the -L port here
+# standard SSH / HTTP mux looks like this (sshttpd -S 22 -H 8080 -L 80)
+PORTS="22 8080"
+
+# a SSH / HTTPS mux with https server on port 4433 and a drops
+# on port 7350 looks like this (sshttpd -S 22 -H 4433 -L 443 -N drops.v2:7350)
+#PORTS="22 4433 7350"
+
+# SNI-only mux without SSH (sshttpd -S 0 -H 4433 -L 443 -N drops.v2:7350)
+#PORTS="4433 7350"
+
+#if it clashes with complex NATing rules, try this
+#iptables -t mangle -F
+#iptables -t nat -F
+#iptables -t raw -F
+
+modprobe nf_conntrack_ipv4 || true
+modprobe nf_conntrack || true
+modprobe xt_conntrack || true
+
+iptables -t mangle -N DIVERT || true
+
+echo "Using network device $DEV"
+
+for p in $PORTS; do
+	echo "Setting up port $p ..."
+
+	# block direct access from outside
+	iptables -A INPUT -i $DEV -p tcp --dport $p -j DROP
+
+	# and divert anything back to sshttpd that comes from the muxed services
+	# so sshttpd can see it
+	iptables -t mangle -A OUTPUT -p tcp -o $DEV --sport $p -j DIVERT
+done
+
+iptables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
+
+iptables -t mangle -A DIVERT -j MARK --set-mark 1
+iptables -t mangle -A DIVERT -j ACCEPT
+
+ip rule add fwmark 1 lookup 123 || true
+ip route add local 0.0.0.0/0 dev lo table 123
+
+# this is necessary on some kernels to make conntrack actually work, huh?
+iptables -A INPUT -m conntrack -i lo --ctstate NEW -j LOG
+

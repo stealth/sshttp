@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# sshttp netfilter rules
+# sshttp netfilter rules, nft version: to be translated to direct "nft" calls
 #
 
 # If you mux SSH/SMTP (rather than HTTP), then HTTP_PORT is your
@@ -23,12 +23,15 @@ PORTS="22 8080"
 #PORTS="4433 7350"
 
 #if it clashes with complex NATing rules, try this
-#iptables -t mangle -F
-#iptables -t nat -F
-#iptables -t raw -F
+#iptables-nft -t mangle -F
+#iptables-nft -t nat -F
+#iptables-nft -t raw -F
 
 modprobe nf_conntrack_ipv4 || true
-iptables -t mangle -N DIVERT || true
+modprobe nf_conntrack || true
+modprobe xt_conntrack || true
+
+iptables-nft -t mangle -N DIVERT || true
 
 echo "Using network device $DEV"
 
@@ -36,18 +39,21 @@ for p in $PORTS; do
 	echo "Setting up port $p ..."
 
 	# block direct access from outside
-	iptables -A INPUT -i $DEV -p tcp --dport $p -j DROP
+	iptables-nft -A INPUT -i $DEV -p tcp --dport $p -j DROP
 
 	# and divert anything back to sshttpd that comes from the muxed services
 	# so sshttpd can see it
-	iptables -t mangle -A OUTPUT -p tcp -o $DEV --sport $p -j DIVERT
+	iptables-nft -t mangle -A OUTPUT -p tcp -o $DEV --sport $p -j DIVERT
 done
 
-iptables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
+iptables-nft -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
 
-iptables -t mangle -A DIVERT -j MARK --set-mark 1
-iptables -t mangle -A DIVERT -j ACCEPT
+iptables-nft -t mangle -A DIVERT -j MARK --set-mark 1
+iptables-nft -t mangle -A DIVERT -j ACCEPT
 
 ip rule add fwmark 1 lookup 123 || true
 ip route add local 0.0.0.0/0 dev lo table 123
+
+# this is necessary on some kernels to make conntrack actually work, huh?
+iptables-nft -A INPUT -m conntrack -i lo --ctstate NEW -j LOG
 
